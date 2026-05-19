@@ -61,7 +61,9 @@ class LeadService
      * Create a lead — works for both manual CRM entry and public ingest API.
      * When called from IngestController, $data['business_id'] is pre-set by ApiKeyMiddleware.
      * When called from LeadController, business_id comes from the authenticated user.
-     * Checks for duplicates by mobile within the same business.
+     * Duplicate handling is configurable per business via settings->duplicate_handling:
+     *   'merge' (default) — update the existing lead and return it
+     *   'new'             — always create a fresh lead regardless
      * Fires LeadCreated event after creation.
      */
     public function create(array $data): Lead
@@ -70,29 +72,45 @@ class LeadService
         $businessId = $data['business_id'] ?? $user->business_id;
         $branchId   = $data['branch_id']   ?? $user?->branch_id;
 
-        // Duplicate check — same mobile within same business
-        $existing = Lead::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
-            ->where('mobile', $data['mobile'])
-            ->first();
+        // Load business settings to check duplicate_handling preference
+        $business          = \App\Models\Business::find($businessId);
+        $duplicateHandling = $business?->settings['duplicate_handling'] ?? 'merge';
 
-        if ($existing) {
-            // Per Q7: same business = update existing lead, not create new
-            $existing->update([
-                'name'          => $data['name'],
-                'email'         => $data['email'] ?? $existing->email,
-                'source'        => $data['source'] ?? $existing->source,
-                'campaign'      => $data['campaign'] ?? $existing->campaign,
-                'city'          => $data['city'] ?? $existing->city,
-                'interested_in' => $data['interested_in'] ?? $existing->interested_in,
-                'lead_value'    => $data['lead_value'] ?? $existing->lead_value,
-                'tags'          => $data['tags'] ?? $existing->tags,
-                'metadata'      => $data['metadata'] ?? $existing->metadata,
-                'custom_fields' => $data['custom_fields'] ?? $existing->custom_fields,
-            ]);
+        if ($duplicateHandling === 'merge') {
+            // Check by mobile first, then email
+            $existing = Lead::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+                ->where('mobile', $data['mobile'])
+                ->first();
 
-            $this->logActivity($existing, 'duplicate_merged', 'Lead re-submitted — existing record updated.');
+            if (!$existing && !empty($data['email'])) {
+                $existing = Lead::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+                    ->where('email', $data['email'])
+                    ->whereNotNull('email')
+                    ->first();
+            }
 
-            return $existing->fresh(['status', 'assignedTo']);
+            if ($existing) {
+                $existing->update([
+                    'name'          => $data['name'],
+                    'email'         => $data['email'] ?? $existing->email,
+                    'source'        => $data['source'] ?? $existing->source,
+                    'campaign'      => $data['campaign'] ?? $existing->campaign,
+                    'city'          => $data['city'] ?? $existing->city,
+                    'interested_in' => $data['interested_in'] ?? $existing->interested_in,
+                    'lead_value'    => $data['lead_value'] ?? $existing->lead_value,
+                    'tags'          => $data['tags'] ?? $existing->tags,
+                    'metadata'      => $data['metadata'] ?? $existing->metadata,
+                    'custom_fields' => $data['custom_fields'] ?? $existing->custom_fields,
+                    'duplicate_of'  => $existing->duplicate_of ?? $existing->id,
+                ]);
+
+                $this->logActivity($existing, 'duplicate_merged', 'Lead re-submitted — existing record updated.');
+
+                $result = $existing->fresh(['status', 'assignedTo']);
+                $result->is_duplicate = true;
+
+                return $result;
+            }
         }
 
         // Get the default status for this business (lowest sort_order)
@@ -116,12 +134,14 @@ class LeadService
             'custom_fields'  => $data['custom_fields'] ?? [],
         ]);
 
-        $this->logActivity($lead, 'created', 'Lead created manually from CRM.');
+        $this->logActivity($lead, 'created', 'Lead created.');
 
-        // Fire the event — Week 3 listeners will send WhatsApp + email
         event(new LeadCreated($lead));
 
-        return $lead->load(['status', 'assignedTo']);
+        $result = $lead->load(['status', 'assignedTo']);
+        $result->is_duplicate = false;
+
+        return $result;
     }
 
     /**
@@ -220,7 +240,6 @@ class LeadService
             $data['metadata'] ?? []
         );
 
-        // Update last_contacted_at when a call log is added
         if (($data['type'] ?? 'note') === 'call_log') {
             $lead->update(['last_contacted_at' => now()]);
         }
