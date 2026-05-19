@@ -22,6 +22,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth'         => \App\Http\Middleware\Authenticate::class,
             'auth.sanctum' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
+            'api_key'      => \App\Http\Middleware\ApiKeyMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

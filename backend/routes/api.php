@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Modules\Auth\Controllers\AuthController;
 use App\Modules\Leads\Controllers\CustomFieldController;
+use App\Modules\Leads\Controllers\IngestController;
 use App\Modules\Leads\Controllers\LeadController;
 
 /*
@@ -20,6 +21,13 @@ Route::prefix('auth')->group(function () {
     Route::post('refresh',         [AuthController::class, 'refresh']);
     Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
     Route::post('reset-password',  [AuthController::class, 'resetPassword']);
+});
+
+// -------------------------------------------------------------------------
+// INGEST ROUTES — public, API key auth via X-API-Key header (T20)
+// -------------------------------------------------------------------------
+Route::middleware(['api_key', 'throttle:100,1'])->group(function () {
+    Route::post('ingest/lead', [IngestController::class, 'store']);
 });
 
 // -------------------------------------------------------------------------

@@ -58,13 +58,17 @@ class LeadService
     }
 
     /**
-     * Create a lead manually from the CRM.
+     * Create a lead — works for both manual CRM entry and public ingest API.
+     * When called from IngestController, $data['business_id'] is pre-set by ApiKeyMiddleware.
+     * When called from LeadController, business_id comes from the authenticated user.
      * Checks for duplicates by mobile within the same business.
      * Fires LeadCreated event after creation.
      */
     public function create(array $data): Lead
     {
-        $user = Auth::user();
+        $user       = Auth::user();
+        $businessId = $data['business_id'] ?? $user->business_id;
+        $branchId   = $data['branch_id']   ?? $user?->branch_id;
 
         // Duplicate check — same mobile within same business
         $existing = Lead::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
@@ -74,16 +78,16 @@ class LeadService
         if ($existing) {
             // Per Q7: same business = update existing lead, not create new
             $existing->update([
-                'name'         => $data['name'],
-                'email'        => $data['email'] ?? $existing->email,
-                'source'       => $data['source'] ?? $existing->source,
-                'campaign'     => $data['campaign'] ?? $existing->campaign,
-                'city'         => $data['city'] ?? $existing->city,
-                'interested_in'=> $data['interested_in'] ?? $existing->interested_in,
-                'lead_value'   => $data['lead_value'] ?? $existing->lead_value,
-                'tags'         => $data['tags'] ?? $existing->tags,
-                'metadata'     => $data['metadata'] ?? $existing->metadata,
-                'custom_fields'=> $data['custom_fields'] ?? $existing->custom_fields,
+                'name'          => $data['name'],
+                'email'         => $data['email'] ?? $existing->email,
+                'source'        => $data['source'] ?? $existing->source,
+                'campaign'      => $data['campaign'] ?? $existing->campaign,
+                'city'          => $data['city'] ?? $existing->city,
+                'interested_in' => $data['interested_in'] ?? $existing->interested_in,
+                'lead_value'    => $data['lead_value'] ?? $existing->lead_value,
+                'tags'          => $data['tags'] ?? $existing->tags,
+                'metadata'      => $data['metadata'] ?? $existing->metadata,
+                'custom_fields' => $data['custom_fields'] ?? $existing->custom_fields,
             ]);
 
             $this->logActivity($existing, 'duplicate_merged', 'Lead re-submitted — existing record updated.');
@@ -95,8 +99,8 @@ class LeadService
         $defaultStatus = LeadStatus::orderBy('sort_order')->first();
 
         $lead = Lead::create([
-            'business_id'    => $user->business_id,
-            'branch_id'      => $data['branch_id'] ?? $user->branch_id,
+            'business_id'    => $businessId,
+            'branch_id'      => $branchId,
             'assigned_to'    => $data['assigned_to'] ?? null,
             'lead_status_id' => $data['lead_status_id'] ?? $defaultStatus?->id,
             'name'           => $data['name'],
@@ -159,21 +163,16 @@ class LeadService
      */
     public function changeStatus(string $id, string $statusId): Lead
     {
-        $lead = Lead::findOrFail($id);
+        $lead        = Lead::findOrFail($id);
         $oldStatusId = $lead->lead_status_id;
-
-        $newStatus = LeadStatus::findOrFail($statusId);
+        $newStatus   = LeadStatus::findOrFail($statusId);
 
         $lead->update([
             'lead_status_id' => $statusId,
             'converted_at'   => $newStatus->is_converted ? now() : $lead->converted_at,
         ]);
 
-        $this->logActivity(
-            $lead,
-            'status_changed',
-            "Status changed to: {$newStatus->name}"
-        );
+        $this->logActivity($lead, 'status_changed', "Status changed to: {$newStatus->name}");
 
         event(new StatusChanged($lead, $oldStatusId, $statusId));
 
@@ -193,16 +192,14 @@ class LeadService
         }
 
         $lead->update([
-            'assigned_to'      => $userId,
+            'assigned_to'       => $userId,
             'last_contacted_at' => now(),
         ]);
 
         $this->logActivity(
             $lead,
             'assigned',
-            $userId
-                ? "Lead assigned to: {$user->name}"
-                : 'Lead unassigned.'
+            $userId ? "Lead assigned to: {$user->name}" : 'Lead unassigned.'
         );
 
         event(new LeadAssigned($lead, $userId));
@@ -215,8 +212,7 @@ class LeadService
      */
     public function addNote(string $id, array $data): LeadActivity
     {
-        $lead = Lead::findOrFail($id);
-
+        $lead     = Lead::findOrFail($id);
         $activity = $this->logActivity(
             $lead,
             $data['type'] ?? 'note',
@@ -241,11 +237,7 @@ class LeadService
 
         $lead->update(['next_followup_at' => $followUpAt]);
 
-        $this->logActivity(
-            $lead,
-            'followup_set',
-            "Follow-up scheduled for: {$followUpAt}"
-        );
+        $this->logActivity($lead, 'followup_set', "Follow-up scheduled for: {$followUpAt}");
 
         return $lead->fresh(['status', 'assignedTo']);
     }
