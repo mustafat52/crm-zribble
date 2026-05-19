@@ -1,0 +1,109 @@
+name: CRM CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  laravel-tests:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: crm_test
+          POSTGRES_USER: crm_user
+          POSTGRES_PASSWORD: crm_secret_2024
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo, pdo_pgsql, pgsql, redis, mbstring, bcmath, gd
+          coverage: pcov
+
+      - name: Copy .env
+        run: cp backend/.env.example backend/.env
+        
+      - name: Set test environment variables
+        run: |
+          echo "APP_KEY=" >> backend/.env
+          echo "DB_CONNECTION=pgsql" >> backend/.env
+          echo "DB_HOST=127.0.0.1" >> backend/.env
+          echo "DB_PORT=5432" >> backend/.env
+          echo "DB_DATABASE=crm_test" >> backend/.env
+          echo "DB_USERNAME=crm_user" >> backend/.env
+          echo "DB_PASSWORD=crm_secret_2024" >> backend/.env
+          echo "REDIS_HOST=127.0.0.1" >> backend/.env
+          echo "QUEUE_CONNECTION=redis" >> backend/.env
+          echo "CACHE_DRIVER=redis" >> backend/.env
+
+      - name: Install Composer dependencies
+        run: composer install --prefer-dist --no-progress
+        working-directory: backend
+
+      - name: Generate app key
+        run: php artisan key:generate
+        working-directory: backend
+
+      - name: Run migrations
+        run: php artisan migrate --force
+        working-directory: backend
+
+      - name: Seed roles and permissions
+        run: php artisan db:seed --class=RolesAndPermissionsSeeder --force
+        working-directory: backend
+
+      - name: Run tests
+        run: php artisan test
+        working-directory: backend
+
+  frontend-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Type check
+        run: npx tsc --noEmit
+        working-directory: frontend
+
+      - name: Build check
+        run: npm run build
+        working-directory: frontend
