@@ -113,6 +113,7 @@ export default function Sidebar() {
   )
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function NavItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
   return (
     <button

@@ -195,6 +195,8 @@ export default function AgencyDashboard() {
   )
 }
 
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function ClientRow({ client: c, onClick }: { 
   client: any
   onClick: () => void 

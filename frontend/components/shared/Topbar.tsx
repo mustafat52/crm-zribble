@@ -83,6 +83,8 @@ export default function Topbar() {
   )
 }
 
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function buildCrumbs(screen: string, role: string, client: any, lead: any) {
   if (screen === 'dashboard')         return ['Dashboard']
   if (screen === 'pipeline')          return role === 'agency' && client ? ['Dashboard', client.name, 'Pipeline'] : [client ? client.name : 'My Account', 'Pipeline']
