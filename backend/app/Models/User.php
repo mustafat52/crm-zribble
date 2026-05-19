@@ -10,6 +10,8 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
+use App\Modules\Auth\Models\TokenFamily;
+use App\Modules\Auth\Models\LoginHistory;
 
 class User extends Authenticatable
 {
