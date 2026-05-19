@@ -130,7 +130,12 @@ export default function ClientDashboard() {
   )
 }
 
-function ActionCard({ num, title, sub, onClick }) {
+function ActionCard({ num, title, sub, onClick }: { 
+  num: number
+  title: string
+  sub: string
+  onClick: () => void 
+}) {
   return (
     <div
       onClick={onClick}

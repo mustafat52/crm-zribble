@@ -51,8 +51,8 @@ export default function AgencyDashboard() {
             <div
               style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', padding: '10px 0', cursor: 'pointer', marginTop: 4 }}
               onClick={() => showToast('Loading 30 more clients…')}
-              onMouseEnter={e => e.target.style.color = 'var(--text2)'}
-              onMouseLeave={e => e.target.style.color = 'var(--text3)'}
+              onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.opacity = '0.75'}
+              onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.opacity = '1'}   
             >
               + 30 more clients
             </div>
@@ -195,7 +195,10 @@ export default function AgencyDashboard() {
   )
 }
 
-function ClientRow({ client: c, onClick }) {
+function ClientRow({ client: c, onClick }: { 
+  client: any
+  onClick: () => void 
+}) {
   return (
     <div
       onClick={onClick}

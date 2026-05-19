@@ -6,9 +6,9 @@ import { getAIAnswer } from '@/lib/utils'
 
 export default function AskAIBar({ placeholder = 'Ask AI anything…', defaultQuery = '' }) {
   const [query, setQuery] = useState('')
-  const [answer, setAnswer] = useState(null)
+  const [answer, setAnswer] = useState<string | null>(null)
 
-  function ask(q) {
+  function ask(q : string) {
     const text = q || query || defaultQuery
     if (!text.trim()) return
     setAnswer(getAIAnswer(text))
@@ -33,7 +33,7 @@ export default function AskAIBar({ placeholder = 'Ask AI anything…', defaultQu
           style={{ flex: 1, border: 'none', outline: 'none', color: 'var(--text)', fontSize: 12, background: 'transparent' }}
           placeholder={placeholder}
           value={query}
-          onChange={e => setQuery(e.target.value)}
+          onChange={e => setQuery(e.currentTarget.value)}
           onKeyDown={e => e.key === 'Enter' && ask(query)}
         />
         <button
