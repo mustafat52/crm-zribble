@@ -9,7 +9,7 @@ export default function Topbar() {
   const client = CLIENTS.find(c => c.id === selectedClientId)
   const crumbs = buildCrumbs(screen, role, client, selectedLead)
 
-  function handleSearch(e) {
+  function handleSearch(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value.trim()
     if (val.length < 2) return
     let count = 0
@@ -44,8 +44,8 @@ export default function Topbar() {
                 transition: 'color 0.15s',
               }}
               onClick={() => i < crumbs.length - 1 && goBack()}
-              onMouseEnter={e => { if (i < crumbs.length - 1) e.target.style.color = 'var(--text2)' }}
-              onMouseLeave={e => { if (i < crumbs.length - 1) e.target.style.color = 'var(--text3)' }}
+              onMouseEnter={e => (e.currentTarget as HTMLSpanElement).style.color = 'var(--text2)'}
+              onMouseLeave={e => (e.currentTarget as HTMLSpanElement).style.color = 'var(--text3)'}
             >{crumb}</span>
             {i < crumbs.length - 1 && <span style={{ color: 'var(--border2)', fontSize: 16 }}>›</span>}
           </React.Fragment>
@@ -83,7 +83,7 @@ export default function Topbar() {
   )
 }
 
-function buildCrumbs(screen, role, client, lead) {
+function buildCrumbs(screen: string, role: string, client: any, lead: any) {
   if (screen === 'dashboard')         return ['Dashboard']
   if (screen === 'pipeline')          return role === 'agency' && client ? ['Dashboard', client.name, 'Pipeline'] : [client ? client.name : 'My Account', 'Pipeline']
   if (screen === 'lead-detail')       return role === 'agency' ? ['Dashboard', client?.name || 'Client', lead?.name || 'Lead'] : ['Pipeline', lead?.name || 'Lead']

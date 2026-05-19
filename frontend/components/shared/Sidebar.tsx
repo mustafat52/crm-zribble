@@ -19,7 +19,7 @@ const NAV3 = [
 export default function Sidebar() {
   const { screen, role, setScreen, switchRole, showToast } = useStore()
 
-  function handleNav(id) {
+  function handleNav(id : string) {
     if (['clients', 'analytics', 'autonudge'].includes(id)) {
       showToast(`${id.charAt(0).toUpperCase() + id.slice(1)} — coming in full build`)
       return
@@ -113,7 +113,7 @@ export default function Sidebar() {
   )
 }
 
-function NavItem({ item, active, onClick }) {
+function NavItem({ item, active, onClick }: { item: any; active: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -149,7 +149,7 @@ function NavItem({ item, active, onClick }) {
   )
 }
 
-function SectionLabel({ children }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
       fontSize: 10, color: 'var(--text3)',
