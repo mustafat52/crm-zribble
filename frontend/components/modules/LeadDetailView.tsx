@@ -436,7 +436,7 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
         <div style={{ fontSize: 32, marginBottom: 12 }}>⚠️</div>
-        <p style={{ color: '#6b7280', fontSize: 14 }}>Lead not found or you don't have access.</p>
+        <p style={{ color: '#6b7280', fontSize: 14 }}>Lead not found or you don&apos;t have access.</p>
         <button onClick={() => router.push('/leads')} style={{ ...backBtnStyle, marginTop: 16 }}>
           ← Back to Leads
         </button>

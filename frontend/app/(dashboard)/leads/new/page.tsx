@@ -16,8 +16,9 @@ export default function NewLeadPage() {
     try {
       await api.post('/leads', form)
       router.push('/leads')
-    } catch (e: any) {
-      setError(e.message ?? 'Failed to create lead.')
+    } catch (e: unknown) {
+      const error = e as Error
+      setError(error.message ?? 'Failed to create lead.')
     } finally {
       setLoading(false)
     }
