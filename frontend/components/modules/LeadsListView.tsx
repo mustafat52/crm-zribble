@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { useLeads, type Lead, type LeadFilters } from '@/hooks/useLeads'
+import { useLeads, type LeadFilters, type Lead } from '@/hooks/useLeads'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -130,7 +130,7 @@ export default function LeadsListView() {
         </div>
 
         <button
-          onClick={() => router.push('/dashboard/leads/new')}
+          onClick={() => router.push('/leads/new')}
           style={{
             display: 'flex', alignItems: 'center', gap: 7,
             padding: '8px 16px',
@@ -367,7 +367,7 @@ export default function LeadsListView() {
               <LeadRow
                 key={lead.id}
                 lead={lead}
-                onClick={() => router.push(`/dashboard/leads/${lead.id}`)}
+                onClick={() => router.push(`/leads/${lead.id}`)}
               />
             ))}
           </tbody>

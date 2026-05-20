@@ -2,68 +2,57 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Modules\Auth\Controllers\AuthController;
+use App\Modules\Auth\Controllers\TeamController;
+use App\Modules\Leads\Controllers\LeadController;
+use App\Modules\Leads\Controllers\LeadStatusController;
 use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
-use App\Modules\Leads\Controllers\LeadController;
 
-/*
-|--------------------------------------------------------------------------
-| API Routes — CRM Platform
-| All routes prefixed with /api/v1 (set via apiPrefix in bootstrap/app.php)
-|--------------------------------------------------------------------------
-*/
+// ── Health check ──────────────────────────────────────────────────────────────
+Route::get('/health', fn () => response()->json(['status' => 'ok', 'service' => 'crm-api']));
 
-// -------------------------------------------------------------------------
-// PUBLIC ROUTES — no auth required
-// -------------------------------------------------------------------------
+// ── Public auth routes (no token required) ────────────────────────────────────
 Route::prefix('auth')->group(function () {
-    Route::post('login',           [AuthController::class, 'login']);
-    Route::post('refresh',         [AuthController::class, 'refresh']);
-    Route::post('forgot-password', [AuthController::class, 'forgotPassword']);
-    Route::post('reset-password',  [AuthController::class, 'resetPassword']);
+    Route::post('/login',           [AuthController::class, 'login']);
+    Route::post('/refresh',         [AuthController::class, 'refresh']);
+    Route::post('/forgot-password', [AuthController::class, 'forgotPassword']);
+    Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
 });
 
-// -------------------------------------------------------------------------
-// INGEST ROUTES — public, API key auth via X-API-Key header (T20)
-// -------------------------------------------------------------------------
+// ── Public ingest (API key auth + rate limit) ─────────────────────────────────
 Route::middleware(['api_key', 'throttle:100,1'])->group(function () {
     Route::post('ingest/lead', [IngestController::class, 'store']);
 });
 
-// -------------------------------------------------------------------------
-// PROTECTED ROUTES — Sanctum token required
-// -------------------------------------------------------------------------
+// ── Protected routes (Sanctum Bearer token required) ─────────────────────────
 Route::middleware('auth:sanctum')->group(function () {
 
     // Auth
-    Route::prefix('auth')->group(function () {
-        Route::post('logout',              [AuthController::class, 'logout']);
-        Route::post('logout-all',          [AuthController::class, 'logoutAll']);
-        Route::get('devices',              [AuthController::class, 'devices']);
-        Route::delete('devices/{tokenId}', [AuthController::class, 'revokeDevice']);
-    });
+    Route::post('/auth/logout',              [AuthController::class, 'logout']);
+    Route::post('/auth/logout-all',          [AuthController::class, 'logoutAll']);
+    Route::get('/auth/devices',              [AuthController::class, 'devices']);
+    Route::delete('/auth/devices/{tokenId}', [AuthController::class, 'revokeDevice']);
+    Route::get('/me',                        [AuthController::class, 'me']);
 
-    // Current user
-    Route::get('me', [AuthController::class, 'me']);
+    // Team members (for assign dropdown)
+    Route::get('/team', [TeamController::class, 'index']);
 
-    // Custom Fields (T18)
-    Route::prefix('custom-fields')->group(function () {
-        Route::get('/',        [CustomFieldController::class, 'index']);
-        Route::post('/',       [CustomFieldController::class, 'store']);
-        Route::put('/{id}',    [CustomFieldController::class, 'update']);
-        Route::delete('/{id}', [CustomFieldController::class, 'destroy']);
-    });
+    // Lead statuses (for status change dropdown)
+    Route::get('/lead-statuses', [LeadStatusController::class, 'index']);
 
-    // Leads (T19)
-    Route::prefix('leads')->group(function () {
-        Route::get('/',               [LeadController::class, 'index']);
-        Route::post('/',              [LeadController::class, 'store']);
-        Route::get('/{id}',           [LeadController::class, 'show']);
-        Route::put('/{id}',           [LeadController::class, 'update']);
-        Route::put('/{id}/status',    [LeadController::class, 'changeStatus']);
-        Route::put('/{id}/assign',    [LeadController::class, 'assign']);
-        Route::post('/{id}/notes',    [LeadController::class, 'addNote']);
-        Route::post('/{id}/followup', [LeadController::class, 'setFollowUp']);
-    });
+    // Custom fields
+    Route::get('/custom-fields',       [CustomFieldController::class, 'index']);
+    Route::post('/custom-fields',      [CustomFieldController::class, 'store']);
+    Route::put('/custom-fields/{id}',  [CustomFieldController::class, 'update']);
+    Route::delete('/custom-fields/{id}', [CustomFieldController::class, 'destroy']);
 
+    // Leads
+    Route::get('/leads',                    [LeadController::class, 'index']);
+    Route::post('/leads',                   [LeadController::class, 'store']);
+    Route::get('/leads/{id}',               [LeadController::class, 'show']);
+    Route::put('/leads/{id}',               [LeadController::class, 'update']);
+    Route::put('/leads/{id}/status',        [LeadController::class, 'changeStatus']);
+    Route::put('/leads/{id}/assign',        [LeadController::class, 'assign']);
+    Route::post('/leads/{id}/notes',        [LeadController::class, 'addNote']);
+    Route::post('/leads/{id}/followup',     [LeadController::class, 'setFollowUp']);
 });

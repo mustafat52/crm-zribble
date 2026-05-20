@@ -16,6 +16,7 @@ use App\Modules\Auth\Models\LoginHistory;
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable, HasRoles, HasUuids;
+    protected string $guard_name = 'sanctum';
 
     // NOTE: users.id is bigint (Laravel default — kept for Sanctum compatibility).
     // business_id and branch_id are UUIDs (linked to businesses/branches tables).
