@@ -8,12 +8,15 @@ import { useAuthStore } from '@/store/useAuthStore'
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
+  const isHydrated      = useAuthStore((s) => s._hasHydrated)
+
 
   useEffect(() => {
-    if (!isAuthenticated) router.replace('/login')
-  }, [isAuthenticated, router])
+  if (isHydrated && !isAuthenticated) router.replace('/login')
+}, [isHydrated, isAuthenticated, router])
 
-  if (!isAuthenticated) return null
+if (!isHydrated) return null          // wait for store to load
+if (!isAuthenticated) return null 
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg2)' }}>
@@ -173,7 +176,7 @@ function Sidebar() {
               color: 'var(--sidebar-text2)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
-              {user?.role ?? ''}
+              {user?.roles?.[0]?? ''}
             </p>
           </div>
         </div>

@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Event;
+use App\Modules\Auth\Models\Branch;
+use App\Modules\Auth\Policies\BranchPolicy;
+
 
 // Lead Events
 use App\Events\Leads\LeadCreated;
@@ -28,6 +32,7 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Gate::policy(Branch::class, BranchPolicy::class);
         Event::listen(LeadCreated::class, SendCustomerAcknowledgement::class);
         Event::listen(LeadCreated::class, NotifyOwnerOfNewLead::class);
         Event::listen(LeadCreated::class, UpdateDashboardStats::class);

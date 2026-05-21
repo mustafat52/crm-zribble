@@ -7,6 +7,7 @@ use App\Modules\Leads\Controllers\LeadController;
 use App\Modules\Leads\Controllers\LeadStatusController;
 use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
+use App\Modules\Auth\Controllers\BranchController;
 
 // ── Health check ──────────────────────────────────────────────────────────────
 Route::get('/health', fn () => response()->json(['status' => 'ok', 'service' => 'crm-api']));
@@ -55,4 +56,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/leads/{id}/assign',        [LeadController::class, 'assign']);
     Route::post('/leads/{id}/notes',        [LeadController::class, 'addNote']);
     Route::post('/leads/{id}/followup',     [LeadController::class, 'setFollowUp']);
+
+    // Branches
+    Route::get('/branches',                 [BranchController::class, 'index']);
+    Route::post('/branches',                [BranchController::class, 'store']);
+    Route::put('/branches/{id}',            [BranchController::class, 'update']);
+    Route::put('/branches/{id}/toggle',     [BranchController::class, 'toggleActive']);
+    Route::delete('/branches/{id}',         [BranchController::class, 'destroy']);
 });
