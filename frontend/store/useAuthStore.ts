@@ -5,7 +5,7 @@ export interface AuthUser {
   id: string
   name: string
   email: string
-  roles: string[]           // array — API returns: { "roles": ["owner"] }
+  roles: string[]         // array — API returns: { "roles": ["owner"] }
   business_id: string
   branch_id: string | null
   is_active?: boolean

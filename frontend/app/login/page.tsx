@@ -12,7 +12,7 @@ interface LoginResponse {
     id: string
     name: string
     email: string
-    role: string
+    roles: string[]
     business_id: string
     branch_id: string | null
   }
@@ -34,7 +34,10 @@ export default function LoginPage() {
 
     try {
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      setAuth(res.access_token, res.user)
+      setAuth(res.access_token,{
+        ...res.user,
+        roles: res.user.roles ?? [res.user.roles].filter(Boolean), // convert single role to array
+      })
       router.push('/leads')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
