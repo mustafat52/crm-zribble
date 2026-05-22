@@ -3,30 +3,128 @@
 namespace App\Modules\Leads\Controllers;
 
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
 use App\Models\LeadStatus;
+use App\Models\Lead;
 
-class LeadStatusController
+class LeadStatusController extends Controller
 {
     /**
      * GET /api/v1/lead-statuses
-     * Returns all lead statuses for the authenticated user's business.
-     * BusinessScope applies automatically — no manual filtering needed.
+     * Returns all statuses for this business ordered by sort_order.
+     * Already existed — unchanged.
      */
     public function index(): JsonResponse
     {
-        $statuses = LeadStatus::orderBy('sort_order')
-            ->get()
-            ->map(fn (LeadStatus $s) => [
-                'id'           => $s->id,
-                'name'         => $s->name,
-                'color'        => $s->color,
-                'sort_order'   => $s->sort_order,
-                'is_converted' => $s->is_converted,
-                'is_lost'      => $s->is_lost,
-                'is_terminal'  => $s->is_terminal,
-            ]);
+        $statuses = LeadStatus::orderBy('sort_order')->get();
 
-        return response()->json(['data' => $statuses]);
+        return response()->json($statuses->map(fn ($s) => $this->format($s)));
+    }
+
+    /**
+     * POST /api/v1/lead-statuses
+     * Creates a new status for this business.
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name'         => 'required|string|max:100',
+            'color'        => 'required|string|regex:/^#[0-9A-Fa-f]{6}$/',
+            'is_converted' => 'sometimes|boolean',
+            'is_lost'      => 'sometimes|boolean',
+            'is_terminal'  => 'sometimes|boolean',
+        ]);
+
+        // Place new status at the end of the list
+        $maxOrder = LeadStatus::max('sort_order') ?? 0;
+
+        $status = LeadStatus::create([
+            'business_id'  => Auth::user()->business_id,
+            'name'         => $data['name'],
+            'color'        => $data['color'],
+            'sort_order'   => $maxOrder + 1,
+            'is_converted' => $data['is_converted'] ?? false,
+            'is_lost'      => $data['is_lost']      ?? false,
+            'is_terminal'  => $data['is_terminal']  ?? false,
+        ]);
+
+        return response()->json($this->format($status), 201);
+    }
+
+    /**
+     * PUT /api/v1/lead-statuses/{id}
+     * Updates name, color, sort_order, and flag fields.
+     */
+    public function update(Request $request, string $id): JsonResponse
+    {
+        $status = LeadStatus::find($id);
+
+        if (! $status) {
+            return response()->json(['message' => 'Status not found.'], 404);
+        }
+
+        $data = $request->validate([
+            'name'         => 'sometimes|required|string|max:100',
+            'color'        => 'sometimes|required|string|regex:/^#[0-9A-Fa-f]{6}$/',
+            'sort_order'   => 'sometimes|integer|min:0',
+            'is_converted' => 'sometimes|boolean',
+            'is_lost'      => 'sometimes|boolean',
+            'is_terminal'  => 'sometimes|boolean',
+        ]);
+
+        $status->fill($data)->save();
+
+        return response()->json($this->format($status));
+    }
+
+    /**
+     * DELETE /api/v1/lead-statuses/{id}
+     * Deletes a status.
+     * Returns 422 if any leads are currently assigned to this status.
+     */
+    public function destroy(string $id): JsonResponse
+    {
+        $status = LeadStatus::find($id);
+
+        if (! $status) {
+            return response()->json(['message' => 'Status not found.'], 404);
+        }
+
+        // Block deletion if leads are using this status —
+        // withoutGlobalScopes so we count across all branches for safety
+        $inUse = Lead::withoutGlobalScopes()
+            ->where('business_id', Auth::user()->business_id)
+            ->where('lead_status_id', $id)
+            ->exists();
+
+        if ($inUse) {
+            return response()->json([
+                'message' => 'Cannot delete this status — it is assigned to one or more leads. Reassign those leads first.',
+            ], 422);
+        }
+
+        $status->delete();
+
+        return response()->json(['message' => 'Status deleted.']);
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers
+    // -------------------------------------------------------------------------
+
+    private function format(LeadStatus $status): array
+    {
+        return [
+            'id'           => $status->id,
+            'business_id'  => $status->business_id,
+            'name'         => $status->name,
+            'color'        => $status->color,
+            'sort_order'   => $status->sort_order,
+            'is_converted' => (bool) $status->is_converted,
+            'is_lost'      => (bool) $status->is_lost,
+            'is_terminal'  => (bool) $status->is_terminal,
+        ];
     }
 }

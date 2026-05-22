@@ -1,0 +1,15 @@
+[90m= [39m[34;4mApp\Models\Business[39;24m {#8447
+    [34mid[39m: [32m"[39m[32ma1d6707a-75e9-45ea-b4f0-889c147baa7d[39m[32m"[39m,
+    [34mname[39m: [32m"[39m[32mGlamour Salon & Spa[39m[32m"[39m,
+    [34mslug[39m: [32m"[39m[32mglamour-salon[39m[32m"[39m,
+    [34mwhatsapp_number[39m: [32m"[39m[32m+919876543210[39m[32m"[39m,
+    [34mwhatsapp_provider[39m: [32m"[39m[32mmock[39m[32m"[39m,
+    [34mwhatsapp_config[39m: [36mnull[39m,
+    [34mtimezone[39m: [32m"[39m[32mAsia/Kolkata[39m[32m"[39m,
+    [34mplan[39m: [32m"[39m[32mpro[39m[32m"[39m,
+    [34mfeatures[39m: [32m"[39m[32m{[39m\"[32mai[39m\"[32m:false,[39m\"[32mautomations[39m\"[32m:false}[39m[32m"[39m,
+    [34msettings[39m: [32m"[39m[32m{[39m\"[32mduplicate_handling[39m\"[32m:[39m\"[32mmerge[39m\"[32m}[39m[32m"[39m,
+    [34mis_active[39m: [36mtrue[39m,
+    [34mcreated_at[39m: [32m"[39m[32m2026-05-22 04:23:41[39m[32m"[39m,
+    [34mupdated_at[39m: [32m"[39m[32m2026-05-22 04:23:41[39m[32m"[39m,
+  }

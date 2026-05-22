@@ -2,17 +2,23 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Modules\Auth\Controllers\AuthController;
+use App\Modules\Auth\Controllers\BranchController;
+use App\Modules\Auth\Controllers\BusinessController;
 use App\Modules\Auth\Controllers\TeamController;
+use App\Modules\Auth\Controllers\ApiKeyController;
 use App\Modules\Leads\Controllers\LeadController;
 use App\Modules\Leads\Controllers\LeadStatusController;
 use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
-use App\Modules\Auth\Controllers\BranchController;
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Health check — public
+// ---------------------------------------------------------------------------
 Route::get('/health', fn () => response()->json(['status' => 'ok', 'service' => 'crm-api']));
 
-// ── Public auth routes (no token required) ────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Auth — public (no token required)
+// ---------------------------------------------------------------------------
 Route::prefix('auth')->group(function () {
     Route::post('/login',           [AuthController::class, 'login']);
     Route::post('/refresh',         [AuthController::class, 'refresh']);
@@ -20,47 +26,66 @@ Route::prefix('auth')->group(function () {
     Route::post('/reset-password',  [AuthController::class, 'resetPassword']);
 });
 
-// ── Public ingest (API key auth + rate limit) ─────────────────────────────────
+// ---------------------------------------------------------------------------
+// Public ingest — API key auth + rate limit
+// ---------------------------------------------------------------------------
 Route::middleware(['api_key', 'throttle:100,1'])->group(function () {
     Route::post('ingest/lead', [IngestController::class, 'store']);
 });
 
-// ── Protected routes (Sanctum Bearer token required) ─────────────────────────
+// ---------------------------------------------------------------------------
+// Protected routes — Sanctum Bearer token required
+// ---------------------------------------------------------------------------
 Route::middleware('auth:sanctum')->group(function () {
 
-    // Auth
+    // Auth / session
     Route::post('/auth/logout',              [AuthController::class, 'logout']);
     Route::post('/auth/logout-all',          [AuthController::class, 'logoutAll']);
     Route::get('/auth/devices',              [AuthController::class, 'devices']);
     Route::delete('/auth/devices/{tokenId}', [AuthController::class, 'revokeDevice']);
     Route::get('/me',                        [AuthController::class, 'me']);
 
-    // Team members (for assign dropdown)
-    Route::get('/team', [TeamController::class, 'index']);
+    // Business settings
+    Route::get('/business',  [BusinessController::class, 'show']);
+    Route::put('/business',  [BusinessController::class, 'update']);
 
-    // Lead statuses (for status change dropdown)
-    Route::get('/lead-statuses', [LeadStatusController::class, 'index']);
+    // Lead statuses
+    Route::get('/lead-statuses',          [LeadStatusController::class, 'index']);
+    Route::post('/lead-statuses',         [LeadStatusController::class, 'store']);
+    Route::put('/lead-statuses/{id}',     [LeadStatusController::class, 'update']);
+    Route::delete('/lead-statuses/{id}',  [LeadStatusController::class, 'destroy']);
+
+    // Team
+    Route::get('/team',            [TeamController::class, 'index']);
+    Route::post('/team/invite',    [TeamController::class, 'invite']);
+    Route::put('/team/{id}',       [TeamController::class, 'update']);
+    Route::delete('/team/{id}',    [TeamController::class, 'destroy']);
+
+    // API Keys
+    Route::get('/api-keys',         [ApiKeyController::class, 'index']);
+    Route::post('/api-keys',        [ApiKeyController::class, 'store']);
+    Route::delete('/api-keys/{id}', [ApiKeyController::class, 'destroy']);
 
     // Custom fields
-    Route::get('/custom-fields',       [CustomFieldController::class, 'index']);
-    Route::post('/custom-fields',      [CustomFieldController::class, 'store']);
-    Route::put('/custom-fields/{id}',  [CustomFieldController::class, 'update']);
+    Route::get('/custom-fields',         [CustomFieldController::class, 'index']);
+    Route::post('/custom-fields',        [CustomFieldController::class, 'store']);
+    Route::put('/custom-fields/{id}',    [CustomFieldController::class, 'update']);
     Route::delete('/custom-fields/{id}', [CustomFieldController::class, 'destroy']);
 
     // Leads
-    Route::get('/leads',                    [LeadController::class, 'index']);
-    Route::post('/leads',                   [LeadController::class, 'store']);
-    Route::get('/leads/{id}',               [LeadController::class, 'show']);
-    Route::put('/leads/{id}',               [LeadController::class, 'update']);
-    Route::put('/leads/{id}/status',        [LeadController::class, 'changeStatus']);
-    Route::put('/leads/{id}/assign',        [LeadController::class, 'assign']);
-    Route::post('/leads/{id}/notes',        [LeadController::class, 'addNote']);
-    Route::post('/leads/{id}/followup',     [LeadController::class, 'setFollowUp']);
+    Route::get('/leads',                      [LeadController::class, 'index']);
+    Route::post('/leads',                     [LeadController::class, 'store']);
+    Route::get('/leads/{id}',                 [LeadController::class, 'show']);
+    Route::put('/leads/{id}',                 [LeadController::class, 'update']);
+    Route::put('/leads/{id}/status',          [LeadController::class, 'changeStatus']);
+    Route::put('/leads/{id}/assign',          [LeadController::class, 'assign']);
+    Route::post('/leads/{id}/notes',          [LeadController::class, 'addNote']);
+    Route::post('/leads/{id}/followup',       [LeadController::class, 'setFollowUp']);
 
     // Branches
-    Route::get('/branches',                 [BranchController::class, 'index']);
-    Route::post('/branches',                [BranchController::class, 'store']);
-    Route::put('/branches/{id}',            [BranchController::class, 'update']);
-    Route::put('/branches/{id}/toggle',     [BranchController::class, 'toggleActive']);
-    Route::delete('/branches/{id}',         [BranchController::class, 'destroy']);
+    Route::get('/branches',            [BranchController::class, 'index']);
+    Route::post('/branches',           [BranchController::class, 'store']);
+    Route::put('/branches/{id}',       [BranchController::class, 'update']);
+    Route::put('/branches/{id}/toggle',[BranchController::class, 'toggleActive']);
+    Route::delete('/branches/{id}',    [BranchController::class, 'destroy']);
 });
