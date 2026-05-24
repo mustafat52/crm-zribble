@@ -133,14 +133,14 @@ class LeadController extends Controller
 
     /**
      * POST /api/v1/leads/{id}/followup
-     * Set a follow-up date on a lead.
      */
     public function setFollowUp(Request $request, string $id): JsonResponse
     {
         $data = $request->validate([
-            'follow_up_at' => 'required|date|after:now',
+            'followup_at' => 'required|date|after:now',
+            'note'        => 'nullable|string|max:500',
         ]);
 
-        return response()->json($this->service->setFollowUp($id, $data['follow_up_at']));
+        return response()->json($this->service->setFollowUp($id, $data['followup_at'], $data['note'] ?? null));
     }
 }

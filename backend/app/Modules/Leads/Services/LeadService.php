@@ -247,16 +247,22 @@ class LeadService
         return $activity;
     }
 
-    /**
-     * Set or update the follow-up date on a lead.
-     */
-    public function setFollowUp(string $id, string $followUpAt): Lead
+    public function setFollowUp(string $id, string $followUpAt, ?string $note = null): Lead
     {
         $lead = Lead::findOrFail($id);
 
         $lead->update(['next_followup_at' => $followUpAt]);
 
-        $this->logActivity($lead, 'followup_set', "Follow-up scheduled for: {$followUpAt}");
+        \App\Modules\Leads\Models\LeadFollowup::create([
+            'business_id'  => $lead->business_id,
+            'lead_id'      => $lead->id,
+            'assigned_to'  => $lead->assigned_to,
+            'follow_up_at' => $followUpAt,
+            'note'         => $note,
+            'status'       => 'pending',
+        ]);
+
+        $this->logActivity($lead, 'followup_set', "Follow-up scheduled for: {$followUpAt}" . ($note ? " — {$note}" : ''));
 
         return $lead->fresh(['status', 'assignedTo']);
     }
