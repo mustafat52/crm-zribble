@@ -8,20 +8,12 @@ use Illuminate\Support\Facades\Event;
 use App\Modules\Auth\Models\Branch;
 use App\Modules\Auth\Policies\BranchPolicy;
 
-
-// Lead Events
-use App\Events\Leads\LeadCreated;
-use App\Events\Leads\LeadAssigned;
-use App\Events\Leads\LeadStatusChanged;
-use App\Events\Leads\FollowUpDue;
+// Lead Events — correct namespace
+use App\Modules\Leads\Events\LeadCreated;
 
 // Listeners
-use App\Listeners\Notifications\SendCustomerAcknowledgement;
-use App\Listeners\Notifications\NotifyOwnerOfNewLead;
-use App\Listeners\Notifications\NotifyAssigneeOfLead;
-use App\Listeners\Notifications\SendFollowUpReminder;
-use App\Listeners\Leads\LogLeadActivity;
-use App\Listeners\Reports\UpdateDashboardStats;
+use App\Modules\Notifications\Listeners\NotifyOwnerOfNewLead;
+use App\Modules\Notifications\Listeners\LogLeadActivity;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -33,11 +25,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Gate::policy(Branch::class, BranchPolicy::class);
-        Event::listen(LeadCreated::class, SendCustomerAcknowledgement::class);
+
+        // LeadCreated → notify owner via email
         Event::listen(LeadCreated::class, NotifyOwnerOfNewLead::class);
-        Event::listen(LeadCreated::class, UpdateDashboardStats::class);
-        Event::listen(LeadAssigned::class, NotifyAssigneeOfLead::class);
-        Event::listen(LeadStatusChanged::class, LogLeadActivity::class);
-        Event::listen(FollowUpDue::class, SendFollowUpReminder::class);
+
+        // LeadCreated → log activity
+        Event::listen(LeadCreated::class, LogLeadActivity::class);
     }
 }
