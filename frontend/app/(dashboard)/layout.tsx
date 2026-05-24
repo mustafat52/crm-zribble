@@ -4,19 +4,19 @@
 import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
+import NotificationBell from '@/components/modules/notifications/NotificationBell'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const isHydrated      = useAuthStore((s) => s._hasHydrated)
 
-
   useEffect(() => {
-  if (isHydrated && !isAuthenticated) router.replace('/login')
-}, [isHydrated, isAuthenticated, router])
+    if (isHydrated && !isAuthenticated) router.replace('/login')
+  }, [isHydrated, isAuthenticated, router])
 
-if (!isHydrated) return null          // wait for store to load
-if (!isAuthenticated) return null 
+  if (!isHydrated) return null
+  if (!isAuthenticated) return null
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg2)' }}>
@@ -49,7 +49,7 @@ function Sidebar() {
     <nav style={{
       width: 'var(--sidebar-width)',
       height: '100vh',
-      background: 'var(--sidebar-bg)',       /* bold dark */
+      background: 'var(--sidebar-bg)',
       borderRight: '1px solid var(--sidebar-border)',
       display: 'flex',
       flexDirection: 'column',
@@ -112,8 +112,8 @@ function Sidebar() {
         {NAV.map((item) => {
           const active = pathname?.startsWith(item.href)
           return (
-            <a
-              key={item.href}
+            
+              <a key={item.href}
               href={item.href}
               style={{
                 display: 'flex',
@@ -142,8 +142,8 @@ function Sidebar() {
             </a>
           )
         })}
-      </div>
-
+      </div>  
+      
       {/* User footer */}
       <div style={{
         padding: '12px 16px',
@@ -176,7 +176,7 @@ function Sidebar() {
               color: 'var(--sidebar-text2)',
               overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
-              {user?.roles?.[0]?? ''}
+              {user?.roles?.[0] ?? ''}
             </p>
           </div>
         </div>
@@ -216,13 +216,21 @@ function Topbar() {
       borderBottom: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
+      justifyContent: 'space-between',
       padding: '0 24px',
-      gap: 6,
       flexShrink: 0,
     }}>
-      <span style={{ fontSize: 13, color: 'var(--text3)' }}>Dashboard</span>
-      <span style={{ fontSize: 13, color: 'var(--border3)' }}>/</span>
-      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{display}</span>
+      {/* Breadcrumb */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontSize: 13, color: 'var(--text3)' }}>Dashboard</span>
+        <span style={{ fontSize: 13, color: 'var(--border3)' }}>/</span>
+        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{display}</span>
+      </div>
+
+      {/* Right side — bell */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <NotificationBell />
+      </div>
     </header>
   )
 }

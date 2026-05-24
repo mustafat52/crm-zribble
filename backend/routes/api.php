@@ -83,9 +83,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leads/{id}/followup',       [LeadController::class, 'setFollowUp']);
 
     // Branches
-    Route::get('/branches',            [BranchController::class, 'index']);
-    Route::post('/branches',           [BranchController::class, 'store']);
-    Route::put('/branches/{id}',       [BranchController::class, 'update']);
-    Route::put('/branches/{id}/toggle',[BranchController::class, 'toggleActive']);
-    Route::delete('/branches/{id}',    [BranchController::class, 'destroy']);
+    Route::get('/branches',             [BranchController::class, 'index']);
+    Route::post('/branches',            [BranchController::class, 'store']);
+    Route::put('/branches/{id}',        [BranchController::class, 'update']);
+    Route::put('/branches/{id}/toggle', [BranchController::class, 'toggleActive']);
+    Route::delete('/branches/{id}',     [BranchController::class, 'destroy']);
+
+    // In-app notifications
+    Route::get('/notifications',             [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'index']);
+    Route::post('/notifications/read-all',   [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read',  [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markRead']);
 });
