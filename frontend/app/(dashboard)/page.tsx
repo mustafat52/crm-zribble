@@ -53,7 +53,7 @@ export default function DashboardPage() {
           Dashboard
         </h1>
         <p style={{ margin: '4px 0 0', fontSize: 14, color: '#6b7280' }}>
-          Welcome back. Here's what needs attention today.
+          Welcome back. Here&apos;s what needs attention today.
         </p>
       </div>
 
@@ -99,7 +99,7 @@ export default function DashboardPage() {
               textAlign: 'center', padding: '24px 0',
               color: '#10b981', fontSize: 14, fontWeight: 500,
             }}>
-              ✅ No overdue follow-ups — you're all caught up!
+              ✅ No overdue follow-ups — you&apos;re all caught up!
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

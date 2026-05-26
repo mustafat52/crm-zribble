@@ -512,7 +512,7 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
     )
   }
 
-  const followupOverdue = isOverdue(lead.next_followup_at)
+  // followupOverdue removed — follow-up section now handled by FollowupHistory component
 
   return (
     <div style={{ padding: '0 0 48px 0', display: 'flex', flexDirection: 'column', gap: 0 }}>
