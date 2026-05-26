@@ -34,10 +34,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
 const NAV = [
-  { label: 'Leads',    href: '/leads',    icon: UsersIcon },
-  { label: 'Reports',  href: '/reports',  icon: ChartIcon },
-  { label: 'Branches', href: '/branches', icon: BranchIcon },
-  { label: 'Settings', href: '/settings', icon: SettingsIcon },
+  { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
+  { label: 'Leads',     href: '/leads',    icon: UsersIcon },
+  { label: 'Reports',   href: '/reports',  icon: ChartIcon },
+  { label: 'Branches',  href: '/branches', icon: BranchIcon },
+  { label: 'Settings',  href: '/settings', icon: SettingsIcon },
 ]
 
 function Sidebar() {
@@ -281,6 +282,17 @@ function LogoutIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
       <path d="M5.5 2H3a1.5 1.5 0 00-1.5 1.5v7A1.5 1.5 0 003 12h2.5M9.5 10.5L12 8l-2.5-2.5M5.5 8H12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
+function DashboardIcon({ active }: { active?: boolean }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style={{ flexShrink: 0, opacity: active ? 1 : 0.7 }}>
+      <rect x="1" y="1" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <rect x="8.5" y="1" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <rect x="1" y="8.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
+      <rect x="8.5" y="8.5" width="5.5" height="5.5" rx="1" stroke="currentColor" strokeWidth="1.4"/>
     </svg>
   )
 }

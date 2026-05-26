@@ -137,6 +137,7 @@ class LeadService
         $this->logActivity($lead, 'created', 'Lead created.');
 
         event(new LeadCreated($lead));
+        \App\Modules\Reports\Services\ReportService::invalidateCache($lead->business_id);
 
         $result = $lead->load(['status', 'assignedTo']);
         $result->is_duplicate = false;
@@ -195,6 +196,7 @@ class LeadService
         $this->logActivity($lead, 'status_changed', "Status changed to: {$newStatus->name}");
 
         event(new StatusChanged($lead, $oldStatusId, $statusId));
+        \App\Modules\Reports\Services\ReportService::invalidateCache($lead->business_id);
 
         return $lead->fresh(['status', 'assignedTo']);
     }

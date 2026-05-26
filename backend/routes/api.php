@@ -96,4 +96,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/notifications',             [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'index']);
     Route::post('/notifications/read-all',   [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markAllRead']);
     Route::post('/notifications/{id}/read',  [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markRead']);
+
+    // Reports
+    Route::get('/reports/dashboard', [\App\Modules\Reports\Controllers\ReportsController::class, 'dashboard']);
 });
