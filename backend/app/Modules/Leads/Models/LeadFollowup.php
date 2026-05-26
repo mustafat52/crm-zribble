@@ -26,8 +26,8 @@ class LeadFollowup extends Model
         'reminded_at'  => 'datetime',
     ];
 
-    public function lead()
+    public function lead(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
-        return $this->belongsTo(Lead::class);
+        return $this->belongsTo(\App\Modules\Leads\Models\Lead::class);
     }
 }

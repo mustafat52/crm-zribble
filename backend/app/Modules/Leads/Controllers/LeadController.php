@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Leads\Services\LeadService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Modules\Leads\Models\LeadFollowup;
 
 class LeadController extends Controller
 {
@@ -142,5 +143,32 @@ class LeadController extends Controller
         ]);
 
         return response()->json($this->service->setFollowUp($id, $data['followup_at'], $data['note'] ?? null));
+    }
+
+    /**
+     * GET /api/v1/leads/{id}/followups
+     * List all follow-ups for a lead.
+     */
+    public function listFollowups(string $id): JsonResponse
+    {
+        return response()->json($this->service->listFollowups($id));
+    }
+
+    /**
+     * POST /api/v1/leads/{id}/followups/{followupId}/done
+     * Mark a follow-up as done.
+     */
+    public function markFollowupDone(string $id, string $followupId): JsonResponse
+    {
+        return response()->json($this->service->markFollowupDone($id, $followupId));
+    }
+
+    /**
+     * GET /api/v1/leads/followups/overdue
+     * Returns all overdue pending follow-ups across all leads for this business.
+     */
+    public function overdueFollowups(): JsonResponse
+    {
+        return response()->json($this->service->overdueFollowups());
     }
 }

@@ -12,6 +12,7 @@ import {
   type LeadDetail,
 } from '@/hooks/useLead'
 import { useLeadStatuses, useTeamMembers } from '@/hooks/useLeadMeta'
+import { useFollowups, useMarkFollowupDone, type Followup } from '@/hooks/useFollowups'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -398,6 +399,73 @@ const selectStyle: React.CSSProperties = {
   ...inputStyle, cursor: 'pointer',
 }
 
+
+function FollowupHistory({ leadId }: { leadId: string }) {
+  const { data: followups = [], isLoading } = useFollowups(leadId)
+  const markDone = useMarkFollowupDone(leadId)
+
+  if (isLoading) return null
+  if (!followups.length) return null
+
+  const statusColors: Record<string, string> = {
+    pending: '#f59e0b',
+    done:    '#10b981',
+    missed:  '#ef4444',
+  }
+
+  const statusLabels: Record<string, string> = {
+    pending: '⏰ Pending',
+    done:    '✅ Done',
+    missed:  '🔴 Missed',
+  }
+
+  return (
+    <SectionCard title={`Follow-ups (${followups.length})`}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {followups.map((f: Followup) => {
+          const overdue = f.status === 'pending' && new Date(f.follow_up_at) < new Date()
+          const color   = overdue ? '#ef4444' : statusColors[f.status]
+          return (
+            <div key={f.id} style={{
+              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+              gap: 12, padding: '10px 12px', borderRadius: 8,
+              background: overdue ? '#fff5f5' : '#fafafa',
+              border: `1px solid ${overdue ? '#fecaca' : '#e5e7eb'}`,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color }}>
+                  {overdue ? '🔴 Overdue' : statusLabels[f.status]}
+                  <span style={{ fontWeight: 400, color: '#6b7280', marginLeft: 8 }}>
+                    {fmtDateTime(f.follow_up_at)}
+                  </span>
+                </div>
+                {f.note && (
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
+                    {f.note}
+                  </div>
+                )}
+              </div>
+              {f.status === 'pending' && (
+                <button
+                  onClick={() => markDone.mutate(f.id)}
+                  disabled={markDone.isPending}
+                  style={{
+                    padding: '4px 10px', borderRadius: 6, border: '1px solid #bbf7d0',
+                    background: '#f0fdf4', color: '#15803d', fontSize: 12,
+                    fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
+                  }}
+                >
+                  Mark Done
+                </button>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </SectionCard>
+  )
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function LeadDetailView({ leadId }: { leadId: string }) {
@@ -543,29 +611,8 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
             )}
           </SectionCard>
 
-          {/* Follow-up */}
-          {lead.next_followup_at && (
-            <div style={{
-              borderRadius: 12, border: `1px solid ${followupOverdue ? '#fecaca' : '#ddd6fe'}`,
-              background: followupOverdue ? '#fff5f5' : '#faf5ff',
-              padding: '14px 18px',
-              display: 'flex', alignItems: 'center', gap: 12,
-            }}>
-              <span style={{ fontSize: 20 }}>{followupOverdue ? '🔴' : '⏰'}</span>
-              <div>
-                <div style={{
-                  fontSize: 12, fontWeight: 700,
-                  color: followupOverdue ? '#dc2626' : '#7c3aed',
-                  textTransform: 'uppercase', letterSpacing: '0.06em',
-                }}>
-                  {followupOverdue ? 'Overdue Follow-up' : 'Upcoming Follow-up'}
-                </div>
-                <div style={{ fontSize: 14, color: '#374151', fontWeight: 500, marginTop: 2 }}>
-                  {fmtDateTime(lead.next_followup_at)}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Follow-up History */}
+          <FollowupHistory leadId={leadId} />
 
           {/* Activity Timeline */}
           <SectionCard title={`Activity Timeline (${lead.activities?.length ?? 0})`}>

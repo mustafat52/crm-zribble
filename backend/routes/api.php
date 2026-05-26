@@ -73,14 +73,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/custom-fields/{id}', [CustomFieldController::class, 'destroy']);
 
     // Leads
-    Route::get('/leads',                      [LeadController::class, 'index']);
-    Route::post('/leads',                     [LeadController::class, 'store']);
-    Route::get('/leads/{id}',                 [LeadController::class, 'show']);
-    Route::put('/leads/{id}',                 [LeadController::class, 'update']);
-    Route::put('/leads/{id}/status',          [LeadController::class, 'changeStatus']);
-    Route::put('/leads/{id}/assign',          [LeadController::class, 'assign']);
-    Route::post('/leads/{id}/notes',          [LeadController::class, 'addNote']);
-    Route::post('/leads/{id}/followup',       [LeadController::class, 'setFollowUp']);
+    Route::get('/leads/followups/overdue',                       [LeadController::class, 'overdueFollowups']);
+    Route::get('/leads',                                         [LeadController::class, 'index']);
+    Route::post('/leads',                                        [LeadController::class, 'store']);
+    Route::get('/leads/{id}',                                    [LeadController::class, 'show']);
+    Route::put('/leads/{id}',                                    [LeadController::class, 'update']);
+    Route::put('/leads/{id}/status',                             [LeadController::class, 'changeStatus']);
+    Route::put('/leads/{id}/assign',                             [LeadController::class, 'assign']);
+    Route::post('/leads/{id}/notes',                             [LeadController::class, 'addNote']);
+    Route::post('/leads/{id}/followup',                          [LeadController::class, 'setFollowUp']);
+    Route::get('/leads/{id}/followups',                          [LeadController::class, 'listFollowups']);
+    Route::post('/leads/{id}/followups/{followupId}/done',       [LeadController::class, 'markFollowupDone']);
 
     // Branches
     Route::get('/branches',             [BranchController::class, 'index']);

@@ -286,4 +286,95 @@ class LeadService
             'metadata'    => $metadata,
         ]);
     }
+
+    /**
+     * List all follow-ups for a lead, newest first.
+     */
+    public function listFollowups(string $id): array
+    {
+        $lead = Lead::findOrFail($id);
+
+        $followups = \App\Modules\Leads\Models\LeadFollowup::where('lead_id', $lead->id)
+            ->where('business_id', $lead->business_id)
+            ->orderByDesc('follow_up_at')
+            ->get()
+            ->map(function ($f) {
+                return [
+                    'id'           => $f->id,
+                    'follow_up_at' => $f->follow_up_at,
+                    'note'         => $f->note,
+                    'status'       => $f->status,
+                    'reminded_at'  => $f->reminded_at,
+                    'assigned_to'  => $f->assigned_to,
+                    'created_at'   => $f->created_at,
+                ];
+            });
+
+        return ['data' => $followups];
+    }
+
+    /**
+     * Mark a follow-up as done.
+     * Also clears next_followup_at on the lead if no other pending follow-ups remain.
+     */
+    public function markFollowupDone(string $id, string $followupId): array
+    {
+        $lead     = Lead::findOrFail($id);
+        $followup = \App\Modules\Leads\Models\LeadFollowup::where('id', $followupId)
+            ->where('lead_id', $lead->id)
+            ->where('business_id', $lead->business_id)
+            ->firstOrFail();
+
+        $followup->update(['status' => 'done']);
+
+        // If no more pending follow-ups, clear next_followup_at on the lead
+        $hasPending = \App\Modules\Leads\Models\LeadFollowup::where('lead_id', $lead->id)
+            ->where('status', 'pending')
+            ->exists();
+
+        if (!$hasPending) {
+            $lead->update(['next_followup_at' => null]);
+        } else {
+            // Point next_followup_at to the next pending one
+            $next = \App\Modules\Leads\Models\LeadFollowup::where('lead_id', $lead->id)
+                ->where('status', 'pending')
+                ->orderBy('follow_up_at')
+                ->first();
+            $lead->update(['next_followup_at' => $next->follow_up_at]);
+        }
+
+        $this->logActivity($lead, 'followup_set', 'Follow-up marked as done.');
+
+        return ['success' => true, 'followup_id' => $followupId];
+    }
+
+    /**
+     * Get all overdue pending follow-ups for the authenticated business.
+     * Used by the dashboard overdue widget.
+     */
+    public function overdueFollowups(): array
+    {
+        $businessId = Auth::user()->business_id;
+
+        $followups = \App\Modules\Leads\Models\LeadFollowup::with(['lead'])
+            ->where('business_id', $businessId)
+            ->where('status', 'pending')
+            ->where('follow_up_at', '<', now())
+            ->orderBy('follow_up_at')
+            ->limit(20)
+            ->get()
+            ->map(function ($f) {
+                return [
+                    'id'           => $f->id,
+                    'follow_up_at' => $f->follow_up_at,
+                    'note'         => $f->note,
+                    'status'       => $f->status,
+                    'lead_id'      => $f->lead_id,
+                    'lead_name'    => $f->lead?->name,
+                    'lead_mobile'  => $f->lead?->mobile,
+                ];
+            });
+
+        return ['data' => $followups];
+    }
 }
