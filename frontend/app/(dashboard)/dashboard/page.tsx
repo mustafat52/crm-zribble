@@ -3,6 +3,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend,
+} from 'recharts'
 
 interface OverdueFollowup {
   id: string
@@ -84,6 +88,16 @@ function StatCard({
   )
 }
 
+const CUSTOM_TOOLTIP_STYLE = {
+  background: '#fff',
+  border: '1px solid #e5e7eb',
+  borderRadius: 8,
+  padding: '8px 12px',
+  fontSize: 12,
+  color: '#374151',
+  boxShadow: '0 4px 6px -1px rgba(0,0,0,0.07)',
+}
+
 export default function DashboardPage() {
   const router = useRouter()
 
@@ -93,7 +107,7 @@ export default function DashboardPage() {
       const res = await api.get<DashboardStats>('/reports/dashboard')
       return res
     },
-    refetchInterval: 300_000, // 5 min — matches Redis TTL
+    refetchInterval: 300_000,
   })
 
   const { data: overdueData, isLoading: overdueLoading } = useQuery<OverdueFollowup[]>({
@@ -109,6 +123,7 @@ export default function DashboardPage() {
 
   return (
     <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <style>{`@keyframes pulse { 0%,100%{background-position:200% 0} 50%{background-position:0% 0} }`}</style>
 
       <div>
         <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: '#111827' }}>
@@ -135,87 +150,80 @@ export default function DashboardPage() {
           <StatCard label="Total Leads" value={stats.totals.all} sub="all time" accent />
           <StatCard label="This Month" value={stats.totals.month} sub={`${stats.totals.today} today`} />
           <StatCard label="Conversion Rate" value={`${stats.totals.conversion_rate}%`} sub={`${stats.totals.converted} converted`} />
-          <StatCard
-            label="Overdue Follow-ups"
-            value={stats.totals.overdue_followups}
-            sub="need attention"
-          />
+          <StatCard label="Overdue Follow-ups" value={stats.totals.overdue_followups} sub="need attention" />
         </div>
       ) : null}
 
-      {/* ── Two column layout ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+      {/* ── Two column: Source bar + Status pie ── */}
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
 
-        {/* Leads by source */}
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Leads by Source
-            </span>
+          {/* Leads by Source — horizontal bar chart */}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Leads by Source
+              </span>
+            </div>
+            <div style={{ padding: '20px 20px 12px' }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  data={stats.by_source.map(s => ({ name: s.source, Leads: s.total }))}
+                  layout="vertical"
+                  margin={{ top: 0, right: 24, left: 16, bottom: 0 }}
+                >
+                  <XAxis type="number" tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                  <YAxis type="category" dataKey="name" tick={{ fontSize: 12, fill: '#374151' }} axisLine={false} tickLine={false} width={70} />
+                  <Tooltip
+                    contentStyle={CUSTOM_TOOLTIP_STYLE}
+                    cursor={{ fill: '#f3f4f6' }}
+                  />
+                  <Bar dataKey="Leads" fill="#7c3aed" radius={[0, 4, 4, 0]} maxBarSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {statsLoading ? (
-              <div style={{ color: '#9ca3af', fontSize: 13 }}>Loading...</div>
-            ) : (stats?.by_source ?? []).length === 0 ? (
-              <div style={{ color: '#9ca3af', fontSize: 13 }}>No data yet.</div>
-            ) : (
-              (stats?.by_source ?? []).map(s => {
-                const max = stats!.by_source[0].total
-                const pct = Math.round((s.total / max) * 100)
-                return (
-                  <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 80, fontSize: 12, color: '#374151', fontWeight: 500, flexShrink: 0, textTransform: 'capitalize' }}>
-                      {s.source}
-                    </div>
-                    <div style={{ flex: 1, height: 8, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: '#7c3aed', borderRadius: 4, transition: 'width 0.4s' }} />
-                    </div>
-                    <div style={{ width: 28, fontSize: 12, fontWeight: 700, color: '#111827', textAlign: 'right', flexShrink: 0 }}>
-                      {s.total}
-                    </div>
-                  </div>
-                )
-              })
-            )}
+
+          {/* Leads by Status — pie chart */}
+          <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Leads by Status
+              </span>
+            </div>
+            <div style={{ padding: '12px 20px 12px' }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie
+                    data={stats.by_status.map(s => ({ name: s.status, value: s.total, color: s.color }))}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={3}
+                    dataKey="value"
+                  >
+                    {stats.by_status.map((s, i) => (
+                      <Cell key={i} fill={s.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    contentStyle={CUSTOM_TOOLTIP_STYLE}
+                    formatter={(value, name) => [value, name]}
+                  />
+                  <Legend
+                    iconType="circle"
+                    iconSize={8}
+                    wrapperStyle={{ fontSize: 12, color: '#374151' }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
+      )}
 
-        {/* Leads by status */}
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
-          <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#374151', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-              Leads by Status
-            </span>
-          </div>
-          <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {statsLoading ? (
-              <div style={{ color: '#9ca3af', fontSize: 13 }}>Loading...</div>
-            ) : (stats?.by_status ?? []).length === 0 ? (
-              <div style={{ color: '#9ca3af', fontSize: 13 }}>No data yet.</div>
-            ) : (
-              (stats?.by_status ?? []).map(s => {
-                const max = stats!.by_status[0].total
-                const pct = Math.round((s.total / max) * 100)
-                return (
-                  <div key={s.status} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 80, fontSize: 12, color: '#374151', fontWeight: 500, flexShrink: 0 }}>
-                      {s.status}
-                    </div>
-                    <div style={{ flex: 1, height: 8, background: '#f3f4f6', borderRadius: 4, overflow: 'hidden' }}>
-                      <div style={{ width: `${pct}%`, height: '100%', background: s.color, borderRadius: 4, transition: 'width 0.4s' }} />
-                    </div>
-                    <div style={{ width: 28, fontSize: 12, fontWeight: 700, color: '#111827', textAlign: 'right', flexShrink: 0 }}>
-                      {s.total}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── Last 7 days sparkline ── */}
+      {/* ── Last 7 days — Recharts bar chart ── */}
       {stats && (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
           <div style={{ padding: '14px 20px', borderBottom: '1px solid #f3f4f6' }}>
@@ -223,23 +231,25 @@ export default function DashboardPage() {
               Leads — Last 7 Days
             </span>
           </div>
-          <div style={{ padding: '20px', display: 'flex', alignItems: 'flex-end', gap: 8, height: 100 }}>
-            {stats.last_7_days.map((d, i) => {
-              const max = Math.max(...stats.last_7_days.map(x => x.total), 1)
-              const heightPct = Math.max((d.total / max) * 100, 4)
-              return (
-                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, height: '100%', justifyContent: 'flex-end' }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#374151' }}>{d.total || ''}</div>
-                  <div style={{
-                    width: '100%', borderRadius: 4,
-                    height: `${heightPct}%`,
-                    background: i === 6 ? '#7c3aed' : '#e9d5ff',
-                    transition: 'height 0.3s',
-                  }} />
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>{d.date}</div>
-                </div>
-              )
-            })}
+          <div style={{ padding: '20px 20px 12px' }}>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart
+                data={stats.last_7_days.map(d => ({ day: d.date, Leads: d.total }))}
+                margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
+              >
+                <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#9ca3af' }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={CUSTOM_TOOLTIP_STYLE}
+                  cursor={{ fill: '#f3f4f6' }}
+                />
+                <Bar dataKey="Leads" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                  {stats.last_7_days.map((_, i) => (
+                    <Cell key={i} fill={i === 6 ? '#7c3aed' : '#ddd6fe'} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       )}
@@ -326,7 +336,6 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <style>{`@keyframes pulse { 0%,100%{background-position:200% 0} 50%{background-position:0% 0} }`}</style>
     </div>
   )
 }
