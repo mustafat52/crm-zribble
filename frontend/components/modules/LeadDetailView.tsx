@@ -49,10 +49,7 @@ function fmtDateTime(iso: string | null): string {
   })
 }
 
-function isOverdue(iso: string | null): boolean {
-  if (!iso) return false
-  return new Date(iso) < new Date()
-}
+
 
 function sourceLabel(source: string): string {
   const map: Record<string, string> = {
