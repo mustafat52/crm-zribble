@@ -10,6 +10,7 @@ use App\Modules\Leads\Controllers\LeadController;
 use App\Modules\Leads\Controllers\LeadStatusController;
 use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
+use App\Modules\Reports\Controllers\ExportController;
 
 // ---------------------------------------------------------------------------
 // Health check — public
@@ -99,4 +100,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Reports
     Route::get('/reports/dashboard', [\App\Modules\Reports\Controllers\ReportsController::class, 'dashboard']);
+    // Export
+    Route::post('/reports/exports', [ExportController::class, 'start']);
+    Route::get('/reports/exports/{exportId}/status', [ExportController::class, 'status']);
+    
 });
+
+// Export download — public (exportId UUID is the secret)
+Route::get('/reports/exports/{exportId}/download', [ExportController::class, 'download']);

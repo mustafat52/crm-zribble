@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useLeads, type LeadFilters, type Lead } from '@/hooks/useLeads'
+import { api } from '@/lib/api'
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -24,13 +25,135 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const SOURCES = ['Website', 'Facebook', 'Instagram', 'Google', 'Referral', 'Walk-in', 'Other']
 
+// ─── ExportButton ─────────────────────────────────────────────────────────────
+
+function ExportButton({ filters }: { filters: LeadFilters }) {
+  const [exporting, setExporting] = useState(false)
+  const [exportStatus, setExportStatus] = useState<string | null>(null)
+  const pollRef = useRef<NodeJS.Timeout | null>(null)
+  const downloadedRef = useRef(false)
+
+  const startExport = async () => {
+  downloadedRef.current = false
+  setExporting(true)
+  setExportStatus('queued')
+
+  try {
+    const params = new URLSearchParams()
+    if (filters.status_id) params.set('status_id', filters.status_id)
+    if (filters.source)    params.set('source', filters.source)
+    if (filters.date_from) params.set('date_from', filters.date_from)
+    if (filters.date_to)   params.set('date_to', filters.date_to)
+
+    const data = await api.post<{ export_id: string }>(
+      `/reports/exports?${params.toString()}`,
+      {}
+    )
+    const exportId = data.export_id
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const statusData = await api.get<{ status: string; url: string }>(
+          `/reports/exports/${exportId}/status`
+        )
+        setExportStatus(statusData.status)
+
+        if (statusData.status === 'ready') {
+          if (downloadedRef.current) return
+          downloadedRef.current = true
+          clearInterval(pollRef.current!)
+          setExporting(false)
+          const token = localStorage.getItem('auth-storage')
+          const parsed = token ? JSON.parse(token) : null
+          const bearerToken = parsed?.state?.token ?? null
+          const dlRes = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/api/v1/reports/exports/${exportId}/download`,
+            { headers: { Authorization: `Bearer ${bearerToken}` } }
+          )
+          const blob = await dlRes.blob()
+          const url = URL.createObjectURL(blob)
+          const a = document.createElement('a')
+          a.href = url
+          a.download = `leads-export-${new Date().toLocaleDateString('en-IN')}.xlsx`
+          a.click()
+          URL.revokeObjectURL(url)
+          setTimeout(() => setExportStatus(null), 3000)
+        } else if (statusData.status === 'failed') {
+          clearInterval(pollRef.current!)
+          setExporting(false)
+        }
+      } catch {
+        clearInterval(pollRef.current!)
+        setExporting(false)
+        setExportStatus('failed')
+      }
+    }, 2000)
+
+  } catch {
+    setExporting(false)
+    setExportStatus('failed')
+  }
+}
+  return (
+    <button
+      onClick={startExport}
+      disabled={exporting}
+      title="Export leads to Excel"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 7,
+        padding: '8px 14px',
+        borderRadius: 'var(--radius)',
+        border: '1px solid var(--border2)',
+        background: 'var(--bg)',
+        color: exporting ? 'var(--accent)' : 'var(--text2)',
+        fontSize: 13,
+        fontWeight: 500,
+        cursor: exporting ? 'not-allowed' : 'pointer',
+        opacity: exporting ? 0.8 : 1,
+        transition: 'all var(--transition)',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={e => { if (!exporting) e.currentTarget.style.background = 'var(--bg3)' }}
+      onMouseLeave={e => { if (!exporting) e.currentTarget.style.background = 'var(--bg)' }}
+    >
+      {exporting ? (
+        <>
+          {/* spinner */}
+          <svg
+            style={{ animation: 'spin 0.8s linear infinite', flexShrink: 0 }}
+            width="14" height="14" viewBox="0 0 24 24" fill="none"
+          >
+            <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.25" />
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+          </svg>
+          <span>{exportStatus === 'queued' ? 'Queuing…' : 'Generating…'}</span>
+        </>
+      ) : (
+        <>
+          {/* download icon */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          <span style={{ color: exportStatus === 'failed' ? '#dc2626' : undefined }}>
+            {exportStatus === 'failed' ? 'Failed — Retry' : 'Export Excel'}
+          </span>
+        </>
+      )}
+    </button>
+  )
+}
+
 // ─── sub-components ─────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: Lead['status'] }) {
   if (!status) return <span style={{ color: 'var(--text3)', fontSize: 12 }}>—</span>
 
-  // Derive a light bg from the status color (hex → rgba at 12%)
-  const bg = status.color + '1f'   // ~12% opacity hex trick works for 6-char hex
+  const bg = status.color + '1f'
 
   return (
     <span style={{
@@ -78,13 +201,11 @@ function SkeletonRow() {
 export default function LeadsListView() {
   const router = useRouter()
 
-  // raw search input (unthrottled)
   const [searchInput, setSearchInput] = useState('')
   const debouncedSearch = useDebounce(searchInput, 300)
 
   const [filters, setFilters] = useState<LeadFilters>({})
 
-  // Sync debounced search into filters (reset to page 1)
   useEffect(() => {
     setFilters(prev => ({ ...prev, search: debouncedSearch || undefined, page: 1 }))
   }, [debouncedSearch])
@@ -129,27 +250,32 @@ export default function LeadsListView() {
           </p>
         </div>
 
-        <button
-          onClick={() => router.push('/leads/new')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            padding: '8px 16px',
-            borderRadius: 'var(--radius)',
-            border: 'none',
-            background: 'var(--accent)',
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'background var(--transition)',
-            boxShadow: 'var(--shadow-sm)',
-          }}
-          onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-2)'}
-          onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
-        >
-          <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
-          Add lead
-        </button>
+        {/* ── header actions: Export + Add Lead ── */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <ExportButton filters={filters} />
+
+          <button
+            onClick={() => router.push('/leads/new')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              padding: '8px 16px',
+              borderRadius: 'var(--radius)',
+              border: 'none',
+              background: 'var(--accent)',
+              color: '#fff',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'background var(--transition)',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--accent-2)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'var(--accent)'}
+          >
+            <span style={{ fontSize: 16, lineHeight: 1 }}>+</span>
+            Add lead
+          </button>
+        </div>
       </div>
 
       {/* ── filters bar ── */}
@@ -277,7 +403,6 @@ export default function LeadsListView() {
           tableLayout: 'fixed',
           minWidth: 820,
         }}>
-          {/* colgroup for proportional widths */}
           <colgroup>
             <col style={{ width: '22%' }} />
             <col style={{ width: '10%' }} />
@@ -310,10 +435,8 @@ export default function LeadsListView() {
           </thead>
 
           <tbody>
-            {/* loading skeletons */}
             {isLoading && Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)}
 
-            {/* error state */}
             {isError && !isLoading && (
               <tr>
                 <td colSpan={7} style={{ padding: '48px 24px', textAlign: 'center' }}>
@@ -328,7 +451,6 @@ export default function LeadsListView() {
               </tr>
             )}
 
-            {/* empty state */}
             {!isLoading && !isError && leads.length === 0 && (
               <tr>
                 <td colSpan={7} style={{ padding: '64px 24px', textAlign: 'center' }}>
@@ -362,7 +484,6 @@ export default function LeadsListView() {
               </tr>
             )}
 
-            {/* data rows */}
             {!isLoading && leads.map(lead => (
               <LeadRow
                 key={lead.id}
@@ -395,7 +516,6 @@ export default function LeadsListView() {
               onClick={() => goToPage(pagination.currentPage - 1)}
             />
 
-            {/* page number pills — show at most 5 around current */}
             {buildPageRange(pagination.currentPage, pagination.lastPage).map((p, i) =>
               p === '…'
                 ? <span key={`ellipsis-${i}`} style={{ padding: '0 4px', color: 'var(--text3)', lineHeight: '30px' }}>…</span>
@@ -442,7 +562,6 @@ function LeadRow({ lead, onClick }: { lead: Lead; onClick: () => void }) {
       onClick={onClick}
       style={{ cursor: 'pointer', borderBottom: '1px solid var(--border)', transition: 'background var(--transition)' }}
     >
-      {/* Name + mobile */}
       <td style={{ padding: '11px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div>
@@ -473,19 +592,16 @@ function LeadRow({ lead, onClick }: { lead: Lead; onClick: () => void }) {
         </div>
       </td>
 
-      {/* Source */}
       <td style={{ padding: '11px 16px' }}>
         <span style={{ fontSize: 13, color: 'var(--text2)' }}>
           {lead.source ?? '—'}
         </span>
       </td>
 
-      {/* Status */}
       <td style={{ padding: '11px 16px' }}>
         <StatusBadge status={lead.status} />
       </td>
 
-      {/* Assigned to */}
       <td style={{ padding: '11px 16px' }}>
         {lead.assignedTo ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -511,19 +627,16 @@ function LeadRow({ lead, onClick }: { lead: Lead; onClick: () => void }) {
         )}
       </td>
 
-      {/* City */}
       <td style={{ padding: '11px 16px' }}>
         <span style={{ fontSize: 13, color: 'var(--text2)' }}>{lead.city ?? '—'}</span>
       </td>
 
-      {/* Created */}
       <td style={{ padding: '11px 16px' }}>
         <span style={{ fontSize: 12, color: 'var(--text3)', fontFamily: 'var(--font-mono)' }}>
           {formatDate(lead.created_at)}
         </span>
       </td>
 
-      {/* Follow-up */}
       <td style={{ padding: '11px 16px' }}>
         <FollowUpCell date={lead.next_followup_at} />
       </td>

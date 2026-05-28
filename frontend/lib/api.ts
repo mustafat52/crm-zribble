@@ -1,7 +1,7 @@
 // lib/api.ts
 // Central API client — attaches Bearer token, handles 401, typed responses.
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1'
+const BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api/v1'
 
 function getToken(): string | null {
   // Read from localStorage directly so this works outside React components too.
