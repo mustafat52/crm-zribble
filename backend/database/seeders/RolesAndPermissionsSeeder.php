@@ -51,5 +51,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'reports.view',
             'branches.view',
         ]);
+        // Agency admin — no business permissions needed, access controlled by middleware
+        Role::firstOrCreate(['name' => 'agency_admin', 'guard_name' => 'sanctum']);
     }
 }

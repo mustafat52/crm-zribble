@@ -6,11 +6,13 @@ use App\Modules\Auth\Controllers\BranchController;
 use App\Modules\Auth\Controllers\BusinessController;
 use App\Modules\Auth\Controllers\TeamController;
 use App\Modules\Auth\Controllers\ApiKeyController;
+use App\Modules\Auth\Controllers\AgencyController;
 use App\Modules\Leads\Controllers\LeadController;
 use App\Modules\Leads\Controllers\LeadStatusController;
 use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
 use App\Modules\Reports\Controllers\ExportController;
+
 
 // ---------------------------------------------------------------------------
 // Health check — public
@@ -107,6 +109,17 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/reports/leads',   [\App\Modules\Reports\Controllers\ReportsController::class, 'leads']);
     Route::get('/reports/team',    [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
     Route::get('/reports/sources', [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
+
+    // -------------------------------------------------------------------------
+    // Agency Super Admin — agency_admin role only
+    // -------------------------------------------------------------------------
+    Route::middleware('agency_admin')->prefix('agency')->group(function () {
+        Route::get('/stats',                        [AgencyController::class, 'stats']);
+        Route::get('/businesses',                   [AgencyController::class, 'businesses']);
+        Route::get('/businesses/{id}',              [AgencyController::class, 'showBusiness']);
+        Route::put('/businesses/{id}/toggle',       [AgencyController::class, 'toggleBusiness']);
+    });
+
 });
 
 // Export download — public (exportId UUID is the secret)
