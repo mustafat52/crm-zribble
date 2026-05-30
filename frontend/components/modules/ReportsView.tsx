@@ -20,7 +20,6 @@ type Tab = 'overview' | 'leads' | 'team' | 'sources'
 // ── Shared helpers ─────────────────────────────────────────────────────────
 
 const PURPLE    = '#7c3aed'
-const PURPLE_LT = '#ddd6fe'
 
 const TOOLTIP_STYLE: React.CSSProperties = {
   background: 'var(--bg)',
