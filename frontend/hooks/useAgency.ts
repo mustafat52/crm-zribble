@@ -28,6 +28,8 @@ export interface AgencyBusinessDetail extends AgencyBusiness {
   lead_count: number
   branch_count: number
   members: AgencyMember[]
+  users?: AgencyMember[]
+  business?: AgencyBusiness
 }
 
 export interface AgencyMember {
