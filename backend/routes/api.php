@@ -104,6 +104,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/reports/exports', [ExportController::class, 'start']);
     Route::get('/reports/exports/{exportId}/status', [ExportController::class, 'status']);
     
+    Route::get('/reports/leads',   [\App\Modules\Reports\Controllers\ReportsController::class, 'leads']);
+    Route::get('/reports/team',    [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
+    Route::get('/reports/sources', [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
 });
 
 // Export download — public (exportId UUID is the secret)

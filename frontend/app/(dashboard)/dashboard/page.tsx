@@ -18,18 +18,16 @@ interface OverdueFollowup {
 }
 
 interface DashboardStats {
-  totals: {
-    all: number
-    today: number
-    week: number
-    month: number
-    converted: number
-    conversion_rate: number
-    overdue_followups: number
-  }
-  by_source: { source: string; total: number }[]
-  by_status: { status: string; color: string; total: number }[]
-  last_7_days: { date: string; total: number }[]
+  total: number
+  today: number
+  thisWeek: number
+  thisMonth: number
+  converted: number
+  conversionRate: number
+  overdue: number
+  bySource: { source: string; total: number }[]
+  byStatus: { name: string; color: string; total: number }[]
+  last7: { day: string; date: string; total: number }[]
 }
 
 function timeAgo(iso: string): string {
@@ -147,10 +145,10 @@ export default function DashboardPage() {
         </div>
       ) : stats ? (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-          <StatCard label="Total Leads" value={stats.totals.all} sub="all time" accent />
-          <StatCard label="This Month" value={stats.totals.month} sub={`${stats.totals.today} today`} />
-          <StatCard label="Conversion Rate" value={`${stats.totals.conversion_rate}%`} sub={`${stats.totals.converted} converted`} />
-          <StatCard label="Overdue Follow-ups" value={stats.totals.overdue_followups} sub="need attention" />
+          <StatCard label="Total Leads" value={stats.total} sub="all time" accent />
+<StatCard label="This Month" value={stats.thisMonth} sub={`${stats.today} today`} />
+<StatCard label="Conversion Rate" value={`${stats.conversionRate}%`} sub={`${stats.converted} converted`} />
+<StatCard label="Overdue Follow-ups" value={stats.overdue} sub="need attention" />
         </div>
       ) : null}
 
@@ -168,7 +166,7 @@ export default function DashboardPage() {
             <div style={{ padding: '20px 20px 12px' }}>
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart
-                  data={stats.by_source.map(s => ({ name: s.source, Leads: s.total }))}
+                  data={stats.bySource.map(s => ({ name: s.source, Leads: s.total }))}
                   layout="vertical"
                   margin={{ top: 0, right: 24, left: 16, bottom: 0 }}
                 >
@@ -195,7 +193,7 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={220}>
                 <PieChart>
                   <Pie
-                    data={stats.by_status.map(s => ({ name: s.status, value: s.total, color: s.color }))}
+                    data={stats.byStatus.map(s => ({ name: s.name, value: s.total, color: s.color }))}
                     cx="50%"
                     cy="50%"
                     innerRadius={55}
@@ -203,7 +201,7 @@ export default function DashboardPage() {
                     paddingAngle={3}
                     dataKey="value"
                   >
-                    {stats.by_status.map((s, i) => (
+                    {stats.byStatus.map((s, i) => (
                       <Cell key={i} fill={s.color} />
                     ))}
                   </Pie>
@@ -234,7 +232,7 @@ export default function DashboardPage() {
           <div style={{ padding: '20px 20px 12px' }}>
             <ResponsiveContainer width="100%" height={160}>
               <BarChart
-                data={stats.last_7_days.map(d => ({ day: d.date, Leads: d.total }))}
+                data={stats.last7.map(d => ({ day: d.date, Leads: d.total }))}
                 margin={{ top: 8, right: 8, left: -20, bottom: 0 }}
               >
                 <XAxis dataKey="day" tick={{ fontSize: 12, fill: '#9ca3af' }} axisLine={false} tickLine={false} />
@@ -244,7 +242,7 @@ export default function DashboardPage() {
                   cursor={{ fill: '#f3f4f6' }}
                 />
                 <Bar dataKey="Leads" radius={[4, 4, 0, 0]} maxBarSize={40}>
-                  {stats.last_7_days.map((_, i) => (
+                  {stats.last7.map((_, i) => (
                     <Cell key={i} fill={i === 6 ? '#7c3aed' : '#ddd6fe'} />
                   ))}
                 </Bar>
