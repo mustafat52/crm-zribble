@@ -38,8 +38,10 @@ export default function LoginPage() {
         ...res.user,
         roles: res.user.roles ?? [res.user.roles].filter(Boolean), // convert single role to array
       })
-      const isAgencyAdmin = res.user.roles?.includes('agency_admin')
-      router.push(isAgencyAdmin ? '/admin/overview' : '/leads')
+      const isAgencyUser =
+      res.user.roles?.includes('agency_admin') ||
+      res.user.roles?.includes('agency_staff')
+      router.push(isAgencyUser ? '/admin/overview' : '/leads')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

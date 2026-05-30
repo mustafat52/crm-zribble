@@ -20,7 +20,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!hydrated) return
     if (!isAuth) { router.replace('/login'); return }
-    if (!user?.roles?.includes('agency_admin')) router.replace('/dashboard')
+    const isAgencyUser =
+    user?.roles?.includes('agency_admin') ||
+    user?.roles?.includes('agency_staff')
+    if (!isAgencyUser) router.replace('/dashboard')
   }, [hydrated, isAuth, user, router])
 
   if (!hydrated || !isAuth) return null

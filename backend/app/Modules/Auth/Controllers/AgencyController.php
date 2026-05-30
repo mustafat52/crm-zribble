@@ -2,82 +2,155 @@
 
 namespace App\Modules\Auth\Controllers;
 
-use Illuminate\Http\JsonResponse;
-use Illuminate\Routing\Controller;
+use App\Models\AgencyBusinessAssignment;
 use App\Models\Business;
 use App\Models\User;
-use App\Models\Lead;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class AgencyController extends Controller
 {
-    /**
-     * GET /api/v1/agency/stats
-     * Platform-wide totals — no business scope.
-     */
-    public function stats(): JsonResponse
-    {
-        $totalBusinesses  = Business::withoutGlobalScopes()->count();
-        $activeBusinesses = Business::withoutGlobalScopes()->where('is_active', true)->count();
-        $totalLeads       = Lead::withoutGlobalScopes()->count();
-        $totalUsers       = User::withoutGlobalScopes()->whereNotNull('business_id')->count();
+    // ─── Helpers ────────────────────────────────────────────────
 
-        return response()->json([
-            'total_businesses'  => $totalBusinesses,
-            'active_businesses' => $activeBusinesses,
-            'total_leads'       => $totalLeads,
-            'total_users'       => $totalUsers,
-        ]);
+    private function isAdmin(): bool
+    {
+        return Auth::user()->hasRole('agency_admin', 'sanctum');
     }
 
     /**
-     * GET /api/v1/agency/businesses
-     * All businesses with their lead count, user count, branch count.
+     * Returns business IDs this user is allowed to see.
+     * agency_admin → all business IDs
+     * agency_staff → only assigned business IDs
      */
+    private function allowedBusinessIds(): ?array
+    {
+        if ($this->isAdmin()) {
+            return null; // null = no restriction
+        }
+
+        return AgencyBusinessAssignment::where('user_id', Auth::id())
+            ->pluck('business_id')
+            ->toArray();
+    }
+
+    private function businessQuery()
+    {
+        $ids = $this->allowedBusinessIds();
+
+        $query = Business::withoutGlobalScopes();
+
+        if ($ids !== null) {
+            $query->whereIn('id', $ids);
+        }
+
+        return $query;
+    }
+
+    // ─── Stats ──────────────────────────────────────────────────
+
+    public function stats(): JsonResponse
+    {
+        $ids = $this->allowedBusinessIds();
+
+        $businessQuery = Business::withoutGlobalScopes();
+        $leadQuery     = DB::table('leads');
+        $userQuery     = DB::table('users')->whereNotNull('business_id');
+
+        if ($ids !== null) {
+            $businessQuery->whereIn('id', $ids);
+            $leadQuery->whereIn('business_id', $ids);
+            $userQuery->whereIn('business_id', $ids);
+        }
+
+        return response()->json([
+            'total_businesses'  => $businessQuery->count(),
+            'active_businesses' => (clone $businessQuery)->where('is_active', true)->count(),
+            'total_leads'       => $leadQuery->count(),
+            'total_users'       => $userQuery->count(),
+            'is_admin'          => $this->isAdmin(),
+        ]);
+    }
+
+    // ─── Business list ──────────────────────────────────────────
+
     public function businesses(): JsonResponse
     {
-        $businesses = Business::withoutGlobalScopes()
-            ->withCount(['leads', 'users', 'branches'])
+        $businesses = $this->businessQuery()
+            ->select('id', 'name', 'slug', 'plan', 'is_active', 'timezone', 'created_at')
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn ($b) => $this->formatBusiness($b));
+            ->map(function ($b) {
+                $leadCount  = DB::table('leads')->where('business_id', $b->id)->count();
+                $userCount  = DB::table('users')->where('business_id', $b->id)->count();
+                $branchCount = DB::table('branches')->where('business_id', $b->id)->count();
+
+                return [
+                    'id'           => $b->id,
+                    'name'         => $b->name,
+                    'slug'         => $b->slug,
+                    'plan'         => $b->plan,
+                    'is_active'    => (bool) $b->is_active,
+                    'timezone'     => $b->timezone,
+                    'created_at'   => $b->created_at,
+                    'lead_count'   => $leadCount,
+                    'user_count'   => $userCount,
+                    'branch_count' => $branchCount,
+                ];
+            });
 
         return response()->json(['data' => $businesses]);
     }
 
-    /**
-     * GET /api/v1/agency/businesses/{id}
-     * Single business detail.
-     */
+    // ─── Single business detail ─────────────────────────────────
+
     public function showBusiness(string $id): JsonResponse
     {
-        $business = Business::withoutGlobalScopes()
-            ->withCount(['leads', 'users', 'branches'])
-            ->findOrFail($id);
+        $ids = $this->allowedBusinessIds();
 
-        // Recent team members
-        $users = User::withoutGlobalScopes()
+        if ($ids !== null && !in_array($id, $ids)) {
+            return response()->json(['message' => 'Not found.'], 404);
+        }
+
+        $business = Business::withoutGlobalScopes()->findOrFail($id);
+
+        $members = User::withoutGlobalScopes()
             ->where('business_id', $id)
-            ->select('id', 'name', 'email', 'is_active', 'last_login_at')
-            ->with('roles:name')
-            ->limit(10)
-            ->get();
+            ->get()
+            ->map(fn($u) => [
+                'id'            => $u->id,
+                'name'          => $u->name,
+                'email'         => $u->email,
+                'roles'         => $u->getRoleNames(),
+                'is_active'     => $u->is_active,
+                'last_login_at' => $u->last_login_at,
+            ]);
 
         return response()->json([
-            'business' => $this->formatBusiness($business),
-            'users'    => $users,
+            'id'           => $business->id,
+            'name'         => $business->name,
+            'slug'         => $business->slug,
+            'plan'         => $business->plan,
+            'is_active'    => (bool) $business->is_active,
+            'timezone'     => $business->timezone,
+            'lead_count'   => DB::table('leads')->where('business_id', $id)->count(),
+            'branch_count' => DB::table('branches')->where('business_id', $id)->count(),
+            'members'      => $members,
         ]);
     }
 
-    /**
-     * PUT /api/v1/agency/businesses/{id}/toggle
-     * Activate or deactivate a business.
-     */
+    // ─── Toggle business active state ───────────────────────────
+
     public function toggleBusiness(string $id): JsonResponse
     {
+        if (!$this->isAdmin()) {
+            return response()->json(['message' => 'Only agency admins can toggle businesses.'], 403);
+        }
+
         $business = Business::withoutGlobalScopes()->findOrFail($id);
-        $business->is_active = ! $business->is_active;
-        $business->save();
+        $business->update(['is_active' => !$business->is_active]);
 
         return response()->json([
             'id'        => $business->id,
@@ -86,22 +159,119 @@ class AgencyController extends Controller
         ]);
     }
 
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-    private function formatBusiness(Business $b): array
+    // ─── Staff management (admin only) ──────────────────────────
+
+    public function staffList(): JsonResponse
     {
-        return [
-            'id'            => $b->id,
-            'name'          => $b->name,
-            'slug'          => $b->slug,
-            'plan'          => $b->plan,
-            'timezone'      => $b->timezone,
-            'is_active'     => $b->is_active,
-            'leads_count'   => $b->leads_count ?? 0,
-            'users_count'   => $b->users_count ?? 0,
-            'branches_count'=> $b->branches_count ?? 0,
-            'created_at'    => $b->created_at?->toISOString(),
-        ];
+        if (!$this->isAdmin()) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $staffRoleId = DB::table('roles')
+            ->where('name', 'agency_staff')
+            ->where('guard_name', 'sanctum')
+            ->value('id');
+
+        if (!$staffRoleId) {
+            return response()->json(['data' => []]);
+        }
+
+        $staffUserIds = DB::table('model_has_roles')
+            ->where('role_id', $staffRoleId)
+            ->pluck('model_id');
+
+        $staff = User::withoutGlobalScopes()
+            ->whereIn('id', $staffUserIds)
+            ->get()
+            ->map(function ($u) {
+                $assignedIds = AgencyBusinessAssignment::where('user_id', $u->id)
+                    ->pluck('business_id');
+
+                $assignedBusinesses = Business::withoutGlobalScopes()
+                    ->whereIn('id', $assignedIds)
+                    ->select('id', 'name', 'plan')
+                    ->get();
+
+                return [
+                    'id'                  => $u->id,
+                    'name'                => $u->name,
+                    'email'               => $u->email,
+                    'is_active'           => $u->is_active,
+                    'last_login_at'       => $u->last_login_at,
+                    'assigned_businesses' => $assignedBusinesses,
+                ];
+            });
+
+        return response()->json(['data' => $staff]);
+    }
+
+    public function inviteStaff(Request $request): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $request->validate([
+            'name'  => 'required|string|max:255',
+            'email' => 'required|email|unique:users,email',
+        ]);
+
+        $tempPassword = 'Staff@' . rand(10000, 99999);
+
+        $user = User::create([
+            'name'        => $request->name,
+            'email'       => $request->email,
+            'password'    => bcrypt($tempPassword),
+            'is_active'   => true,
+            'business_id' => null,
+            'branch_id'   => null,
+        ]);
+
+        $user->assignRole('agency_staff');
+
+        return response()->json([
+            'user'          => [
+                'id'    => $user->id,
+                'name'  => $user->name,
+                'email' => $user->email,
+            ],
+            'temp_password' => $tempPassword,
+            'message'       => 'Staff member created. Share the temp password — they can change it after login.',
+        ], 201);
+    }
+
+    public function assignBusiness(Request $request, string $staffId): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $request->validate([
+            'business_id' => 'required|uuid|exists:businesses,id',
+        ]);
+
+        AgencyBusinessAssignment::firstOrCreate([
+            'user_id'     => $staffId,
+            'business_id' => $request->business_id,
+        ]);
+
+        return response()->json(['message' => 'Business assigned.']);
+    }
+
+    public function unassignBusiness(Request $request, string $staffId): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return response()->json(['message' => 'Forbidden.'], 403);
+        }
+
+        $request->validate([
+            'business_id' => 'required|uuid',
+        ]);
+
+        AgencyBusinessAssignment::where('user_id', $staffId)
+            ->where('business_id', $request->business_id)
+            ->delete();
+
+        return response()->json(['message' => 'Business unassigned.']);
     }
 }

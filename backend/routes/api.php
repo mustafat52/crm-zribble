@@ -113,12 +113,21 @@ Route::middleware('auth:sanctum')->group(function () {
     // -------------------------------------------------------------------------
     // Agency Super Admin — agency_admin role only
     // -------------------------------------------------------------------------
-    Route::middleware('agency_admin')->prefix('agency')->group(function () {
-        Route::get('/stats',                        [AgencyController::class, 'stats']);
-        Route::get('/businesses',                   [AgencyController::class, 'businesses']);
-        Route::get('/businesses/{id}',              [AgencyController::class, 'showBusiness']);
-        Route::put('/businesses/{id}/toggle',       [AgencyController::class, 'toggleBusiness']);
-    });
+    Route::middleware('agency_access')->prefix('agency')->group(function () {
+    // Shared routes — both admin and staff (data filtered inside controller)
+    Route::get('stats', [\App\Modules\Auth\Controllers\AgencyController::class, 'stats']);
+    Route::get('businesses', [\App\Modules\Auth\Controllers\AgencyController::class, 'businesses']);
+    Route::get('businesses/{id}', [\App\Modules\Auth\Controllers\AgencyController::class, 'showBusiness']);
+
+    // Admin-only routes (controller enforces internally)
+    Route::put('businesses/{id}/toggle', [\App\Modules\Auth\Controllers\AgencyController::class, 'toggleBusiness']);
+
+    // Staff management (admin only — controller enforces)
+    Route::get('staff', [\App\Modules\Auth\Controllers\AgencyController::class, 'staffList']);
+    Route::post('staff', [\App\Modules\Auth\Controllers\AgencyController::class, 'inviteStaff']);
+    Route::post('staff/{staffId}/assign', [\App\Modules\Auth\Controllers\AgencyController::class, 'assignBusiness']);
+    Route::delete('staff/{staffId}/assign', [\App\Modules\Auth\Controllers\AgencyController::class, 'unassignBusiness']);
+});
 
 });
 

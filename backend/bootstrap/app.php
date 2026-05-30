@@ -23,7 +23,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth'         => \App\Http\Middleware\Authenticate::class,
             'auth.sanctum' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
             'api_key'      => \App\Http\Middleware\ApiKeyMiddleware::class,
-            'agency_admin' => \App\Http\Middleware\EnsureAgencyAdmin::class,
+            'agency_admin'  => \App\Http\Middleware\EnsureAgencyAdmin::class,
+            'agency_access' => \App\Http\Middleware\EnsureAgencyAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
