@@ -5,245 +5,573 @@ namespace App\Modules\Reports\Services;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use App\Models\Lead;
+use Carbon\Carbon;
 
 class ReportService
 {
-    // ── Dashboard stats (Redis cached 5 min) ───────────────────────────────
+    // ─────────────────────────────────────────────
+    // DASHBOARD STATS (Redis cached, 5 min TTL)
+    // ─────────────────────────────────────────────
 
-    public function dashboardStats(): array
+    public function dashboardStats(array $filters = []): array
     {
-        $businessId = Auth::user()->business_id;
-        $cacheKey   = "dashboard_stats:{$businessId}";
+        $user       = Auth::user();
+        $businessId = $user->business_id;
+        $branchId   = $filters['branch_id'] ?? null;
 
-        return Cache::remember($cacheKey, 300, fn () => $this->computeDashboardStats($businessId));
+        // Cache key includes branch filter so different branches get their own cache
+        $cacheKey = "dashboard_stats:{$businessId}" . ($branchId ? ":{$branchId}" : '');
+
+        return Cache::remember($cacheKey, 300, function () use ($businessId, $branchId, $user) {
+            return $this->computeDashboardStats($businessId, $branchId, $user);
+        });
     }
 
-    public static function invalidateCache(string $businessId): void
+    private function computeDashboardStats(string $businessId, ?string $branchId, $user): array
     {
-        Cache::forget("dashboard_stats:{$businessId}");
-    }
+        $now   = Carbon::now();
+        $base  = DB::table('leads')->where('leads.business_id', $businessId)->whereNull('leads.deleted_at');
 
-    private function computeDashboardStats(string $businessId): array
-    {
-        $base = Lead::withoutGlobalScopes()
-            ->where('leads.business_id', $businessId);
+        // Branch filter: non-owners always see only their branch
+        if ($user->branch_id) {
+            $branchId = $user->branch_id;
+        }
+        if ($branchId) {
+            $base = $base->where('leads.branch_id', $branchId);
+        }
 
-        $total     = (clone $base)->count();
-        $today     = (clone $base)->whereDate('leads.created_at', today())->count();
-        $thisWeek  = (clone $base)->whereBetween('leads.created_at', [now()->startOfWeek(), now()->endOfWeek()])->count();
-        $thisMonth = (clone $base)->whereMonth('leads.created_at', now()->month)
-                                  ->whereYear('leads.created_at', now()->year)->count();
+        // ── Totals ──
+        $total        = (clone $base)->count();
+        $thisMonth    = (clone $base)->whereMonth('leads.created_at', $now->month)->whereYear('leads.created_at', $now->year)->count();
+        $today        = (clone $base)->whereDate('leads.created_at', $now->toDateString())->count();
 
-        $converted     = (clone $base)->whereNotNull('leads.converted_at')->count();
+        // ── Conversion ──
+        $convertedIds = DB::table('lead_statuses')
+            ->where('business_id', $businessId)
+            ->where('is_converted', true)
+            ->pluck('id');
+        $converted    = (clone $base)->whereIn('leads.lead_status_id', $convertedIds)->count();
         $conversionRate = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
 
+        // ── Active Leads (not terminal, not converted, not lost) ──
+        $terminalIds  = DB::table('lead_statuses')
+            ->where('business_id', $businessId)
+            ->where(function ($q) {
+                $q->where('is_terminal', true)
+                  ->orWhere('is_converted', true)
+                  ->orWhere('is_lost', true);
+            })
+            ->pluck('id');
+        $activeLeads  = (clone $base)->whereNotIn('leads.lead_status_id', $terminalIds)->count();
+
+        // ── Overdue Follow-Ups ──
+        $overdueFollowups = DB::table('lead_followups')
+            ->where('business_id', $businessId)
+            ->where('status', 'pending')
+            ->where('follow_up_at', '<', $now)
+            ->when($branchId, fn ($q) => $q->whereIn('lead_id',
+                DB::table('leads')->where('branch_id', $branchId)->pluck('id')
+            ))
+            ->count();
+
+        // ── Follow-ups due today ──
+        $followupsDueToday = DB::table('lead_followups')
+            ->where('business_id', $businessId)
+            ->where('status', 'pending')
+            ->whereDate('follow_up_at', $now->toDateString())
+            ->where('follow_up_at', '>=', $now)
+            ->when($branchId, fn ($q) => $q->whereIn('lead_id',
+                DB::table('leads')->where('branch_id', $branchId)->pluck('id')
+            ))
+            ->count();
+
+        // ── Unassigned leads ──
+        $unassigned = (clone $base)->whereNull('leads.assigned_to')->count();
+
+        // ── Contact Rate (leads that have at least one activity) ──
+        $contacted    = (clone $base)->whereNotNull('leads.last_contacted_at')->count();
+        $contactRate  = $total > 0 ? round(($contacted / $total) * 100, 1) : 0;
+
+        // ── By Source ──
         $bySource = (clone $base)
             ->select('leads.source', DB::raw('count(*) as total'))
             ->groupBy('leads.source')
             ->orderByDesc('total')
-            ->limit(6)
+            ->limit(8)
             ->get()
-            ->map(fn ($r) => ['source' => $r->source ?: 'Unknown', 'total' => (int) $r->total])
-            ->toArray();
+            ->map(fn ($r) => ['source' => $r->source ?: 'Unknown', 'total' => $r->total]);
 
+        // ── By Status ──
         $byStatus = (clone $base)
             ->join('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
             ->select('lead_statuses.name', 'lead_statuses.color', DB::raw('count(*) as total'))
             ->groupBy('lead_statuses.name', 'lead_statuses.color')
+            ->orderByDesc('total')
             ->get()
-            ->map(fn ($r) => ['name' => $r->name, 'color' => $r->color, 'total' => (int) $r->total])
-            ->toArray();
+            ->map(fn ($r) => ['name' => $r->name, 'color' => $r->color, 'total' => $r->total]);
 
-        $overdue = DB::table('lead_followups')
-            ->where('business_id', $businessId)
-            ->where('status', 'pending')
-            ->where('follow_up_at', '<', now())
-            ->count();
-
-        $last7 = collect(range(6, 0))->map(function ($daysAgo) use ($base, $businessId) {
-            $date = now()->subDays($daysAgo);
-            $count = (clone $base)->whereDate('leads.created_at', $date)->count();
-            return ['day' => $date->format('D'), 'date' => $date->toDateString(), 'total' => $count];
-        })->toArray();
-
-        return compact('total', 'today', 'thisWeek', 'thisMonth', 'converted', 'conversionRate', 'bySource', 'byStatus', 'overdue', 'last7');
-    }
-
-    // ── Leads report ───────────────────────────────────────────────────────
-
-    public function leadsReport(array $filters): array
-    {
-        $businessId = Auth::user()->business_id;
-        $user       = Auth::user();
-
-        $query = Lead::withoutGlobalScopes()
-            ->where('leads.business_id', $businessId)
-            ->join('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
-            ->leftJoin('users as assignee', 'leads.assigned_to', '=', 'assignee.id')
-            ->leftJoin('branches', 'leads.branch_id', '=', 'branches.id')
-            ->select(
-                'leads.id', 'leads.name', 'leads.mobile', 'leads.email',
-                'leads.source', 'leads.created_at', 'leads.lead_value',
-                'leads.converted_at', 'leads.next_followup_at',
-                'lead_statuses.name as status_name', 'lead_statuses.color as status_color',
-                'assignee.name as assignee_name',
-                'branches.name as branch_name'
-            );
-
-        // Branch scope for non-owners
-        if ($user->branch_id) {
-            $query->where('leads.branch_id', $user->branch_id);
+        // ── Last 7 days ──
+        $last7 = [];
+        for ($i = 6; $i >= 0; $i--) {
+            $day   = $now->copy()->subDays($i);
+            $count = (clone $base)->whereDate('leads.created_at', $day->toDateString())->count();
+            $last7[] = ['day' => $day->format('D'), 'date' => $day->toDateString(), 'total' => $count];
         }
 
-        if (!empty($filters['date_from'])) {
-            $query->whereDate('leads.created_at', '>=', $filters['date_from']);
+        // ── Branch Breakdown (owners only) ──
+        $branchBreakdown = [];
+        if (!$user->branch_id) {
+            $branchBreakdown = DB::table('leads')
+                ->leftJoin('branches', 'leads.branch_id', '=', 'branches.id')
+                ->where('leads.business_id', $businessId)
+                ->whereNull('leads.deleted_at')
+                ->select(
+                    'branches.name as branch_name',
+                    DB::raw('count(*) as leads'),
+                    DB::raw("count(case when leads.lead_status_id in (select id from lead_statuses where is_converted = true and business_id = '{$businessId}') then 1 end) as converted")
+                )
+                ->groupBy('branches.name')
+                ->get()
+                ->map(function ($r) {
+                    $rate = $r->leads > 0 ? round(($r->converted / $r->leads) * 100, 1) : 0;
+                    return [
+                        'branch'          => $r->branch_name ?? 'No Branch',
+                        'leads'           => $r->leads,
+                        'converted'       => $r->converted,
+                        'conversion_rate' => $rate,
+                    ];
+                });
         }
-        if (!empty($filters['date_to'])) {
-            $query->whereDate('leads.created_at', '<=', $filters['date_to']);
-        }
-        if (!empty($filters['source'])) {
-            $query->where('leads.source', $filters['source']);
-        }
-        if (!empty($filters['status_id'])) {
-            $query->where('leads.lead_status_id', $filters['status_id']);
-        }
-        if (!empty($filters['branch_id'])) {
-            $query->where('leads.branch_id', $filters['branch_id']);
-        }
-        if (!empty($filters['assigned_to'])) {
-            $query->where('leads.assigned_to', $filters['assigned_to']);
-        }
-
-        $leads = $query->orderByDesc('leads.created_at')->limit(500)->get();
-
-        // Summary counts
-        $total     = $leads->count();
-        $converted = $leads->whereNotNull('converted_at')->count();
-        $rate      = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
 
         return [
-            'leads'          => $leads->toArray(),
-            'total'          => $total,
-            'converted'      => $converted,
-            'conversion_rate' => $rate,
+            'total'               => $total,
+            'thisMonth'           => $thisMonth,
+            'today'               => $today,
+            'converted'           => $converted,
+            'conversionRate'      => $conversionRate,
+            'activeLeads'         => $activeLeads,
+            'overdue'             => $overdueFollowups,
+            'followupsDueToday'   => $followupsDueToday,
+            'unassigned'          => $unassigned,
+            'contactRate'         => $contactRate,
+            'bySource'            => $bySource,
+            'byStatus'            => $byStatus,
+            'last7'               => $last7,
+            'branchBreakdown'     => $branchBreakdown,
         ];
     }
 
-    // ── Team report ────────────────────────────────────────────────────────
-
-    public function teamReport(array $filters): array
+    public static function invalidateCache(string $businessId): void
     {
-        $businessId = Auth::user()->business_id;
-        $user       = Auth::user();
-
-        $query = DB::table('users')
-            ->where('users.business_id', $businessId)
-            ->where('users.is_active', true)
-            ->leftJoin('branches', 'users.branch_id', '=', 'branches.id')
-            ->select(
-                'users.id', 'users.name', 'users.email',
-                'branches.name as branch_name'
-            );
-
-        if ($user->branch_id) {
-            $query->where('users.branch_id', $user->branch_id);
+        // Invalidate base cache and any branch-specific caches
+        Cache::forget("dashboard_stats:{$businessId}");
+        // Also clear any branch-filtered versions (can't enumerate, so set short TTL)
+        $branches = DB::table('branches')->where('business_id', $businessId)->pluck('id');
+        foreach ($branches as $bid) {
+            Cache::forget("dashboard_stats:{$businessId}:{$bid}");
         }
-        if (!empty($filters['branch_id'])) {
-            $query->where('users.branch_id', $filters['branch_id']);
-        }
-
-        $users = $query->get();
-
-        $members = $users->map(function ($member) use ($businessId, $filters) {
-            $leadQuery = Lead::withoutGlobalScopes()
-                ->where('leads.business_id', $businessId)
-                ->where('leads.assigned_to', $member->id);
-
-            if (!empty($filters['date_from'])) {
-                $leadQuery->whereDate('leads.created_at', '>=', $filters['date_from']);
-            }
-            if (!empty($filters['date_to'])) {
-                $leadQuery->whereDate('leads.created_at', '<=', $filters['date_to']);
-            }
-
-            $assigned  = (clone $leadQuery)->count();
-            $converted = (clone $leadQuery)->whereNotNull('leads.converted_at')->count();
-            $rate      = $assigned > 0 ? round(($converted / $assigned) * 100, 1) : 0;
-
-            $followupsDone = DB::table('lead_followups')
-                ->where('business_id', $businessId)
-                ->where('assigned_to', $member->id)
-                ->where('status', 'done')
-                ->when(!empty($filters['date_from']), fn ($q) => $q->whereDate('follow_up_at', '>=', $filters['date_from']))
-                ->when(!empty($filters['date_to']),   fn ($q) => $q->whereDate('follow_up_at', '<=', $filters['date_to']))
-                ->count();
-
-            $followupsTotal = DB::table('lead_followups')
-                ->where('business_id', $businessId)
-                ->where('assigned_to', $member->id)
-                ->when(!empty($filters['date_from']), fn ($q) => $q->whereDate('follow_up_at', '>=', $filters['date_from']))
-                ->when(!empty($filters['date_to']),   fn ($q) => $q->whereDate('follow_up_at', '<=', $filters['date_to']))
-                ->count();
-
-            $followupPct = $followupsTotal > 0 ? round(($followupsDone / $followupsTotal) * 100, 1) : 0;
-
-            return [
-                'id'             => $member->id,
-                'name'           => $member->name,
-                'email'          => $member->email,
-                'branch_name'    => $member->branch_name ?? '—',
-                'assigned'       => $assigned,
-                'converted'      => $converted,
-                'conversion_rate' => $rate,
-                'followups_done' => $followupsDone,
-                'followup_pct'   => $followupPct,
-            ];
-        });
-
-        return ['members' => $members->toArray()];
     }
 
-    // ── Sources report ─────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────
+    // ACTION QUEUE (Dashboard main widget)
+    // ─────────────────────────────────────────────
 
-    public function sourcesReport(array $filters): array
+    public function actionQueue(array $filters = []): array
     {
-        $businessId = Auth::user()->business_id;
         $user       = Auth::user();
+        $businessId = $user->business_id;
+        $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        $now        = Carbon::now();
 
-        $query = Lead::withoutGlobalScopes()
-            ->where('leads.business_id', $businessId)
+        // ── Overdue Follow-Ups ──
+        $overdue = DB::table('lead_followups')
+            ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
+            ->leftJoin('users', 'leads.assigned_to', '=', 'users.id')
+            ->leftJoin('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
+            ->where('lead_followups.business_id', $businessId)
+            ->where('lead_followups.status', 'pending')
+            ->where('lead_followups.follow_up_at', '<', $now)
+            ->whereNull('leads.deleted_at')
+            ->when($branchId, fn ($q) => $q->where('leads.branch_id', $branchId))
             ->select(
+                'lead_followups.id as followup_id',
+                'leads.id as lead_id',
+                'leads.name as lead_name',
+                'leads.mobile',
                 'leads.source',
-                DB::raw('count(*) as total'),
-                DB::raw('count(leads.converted_at) as converted')
+                'lead_statuses.name as status',
+                'lead_statuses.color as status_color',
+                'users.name as assigned_staff',
+                'lead_followups.follow_up_at as due_time',
+                'lead_followups.note'
             )
-            ->groupBy('leads.source')
-            ->orderByDesc('total');
+            ->orderBy('lead_followups.follow_up_at')
+            ->limit(25)
+            ->get()
+            ->map(fn ($r) => $this->formatQueueRow($r, 'overdue'));
 
-        if ($user->branch_id) {
-            $query->where('leads.branch_id', $user->branch_id);
-        }
-        if (!empty($filters['date_from'])) {
-            $query->whereDate('leads.created_at', '>=', $filters['date_from']);
-        }
-        if (!empty($filters['date_to'])) {
-            $query->whereDate('leads.created_at', '<=', $filters['date_to']);
-        }
-        if (!empty($filters['branch_id'])) {
-            $query->where('leads.branch_id', $filters['branch_id']);
-        }
+        // ── Follow-Ups Due Today ──
+        $dueToday = DB::table('lead_followups')
+            ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
+            ->leftJoin('users', 'leads.assigned_to', '=', 'users.id')
+            ->leftJoin('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
+            ->where('lead_followups.business_id', $businessId)
+            ->where('lead_followups.status', 'pending')
+            ->whereDate('lead_followups.follow_up_at', $now->toDateString())
+            ->where('lead_followups.follow_up_at', '>=', $now)
+            ->whereNull('leads.deleted_at')
+            ->when($branchId, fn ($q) => $q->where('leads.branch_id', $branchId))
+            ->select(
+                'lead_followups.id as followup_id',
+                'leads.id as lead_id',
+                'leads.name as lead_name',
+                'leads.mobile',
+                'leads.source',
+                'lead_statuses.name as status',
+                'lead_statuses.color as status_color',
+                'users.name as assigned_staff',
+                'lead_followups.follow_up_at as due_time',
+                'lead_followups.note'
+            )
+            ->orderBy('lead_followups.follow_up_at')
+            ->limit(25)
+            ->get()
+            ->map(fn ($r) => $this->formatQueueRow($r, 'due_today'));
 
-        $rows = $query->get()->map(function ($r) {
-            $rate = $r->total > 0 ? round(($r->converted / $r->total) * 100, 1) : 0;
+        // ── Unassigned Leads ──
+        $unassigned = DB::table('leads')
+            ->leftJoin('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
+            ->where('leads.business_id', $businessId)
+            ->whereNull('leads.assigned_to')
+            ->whereNull('leads.deleted_at')
+            ->when($branchId, fn ($q) => $q->where('leads.branch_id', $branchId))
+            ->select(
+                DB::raw('null as followup_id'),
+                'leads.id as lead_id',
+                'leads.name as lead_name',
+                'leads.mobile',
+                'leads.source',
+                'lead_statuses.name as status',
+                'lead_statuses.color as status_color',
+                DB::raw('null as assigned_staff'),
+                'leads.created_at as due_time',
+                DB::raw('null as note')
+            )
+            ->orderBy('leads.created_at')
+            ->limit(25)
+            ->get()
+            ->map(fn ($r) => $this->formatQueueRow($r, 'unassigned'));
+
+        return [
+            'overdue'    => $overdue,
+            'due_today'  => $dueToday,
+            'unassigned' => $unassigned,
+            'counts'     => [
+                'overdue'    => count($overdue),
+                'due_today'  => count($dueToday),
+                'unassigned' => count($unassigned),
+                'total'      => count($overdue) + count($dueToday) + count($unassigned),
+            ],
+        ];
+    }
+
+    private function formatQueueRow($r, string $category): array
+    {
+        return [
+            'followup_id'    => $r->followup_id,
+            'lead_id'        => $r->lead_id,
+            'lead_name'      => $r->lead_name,
+            'mobile'         => $r->mobile,
+            'source'         => $r->source ?: 'Unknown',
+            'status'         => $r->status,
+            'status_color'   => $r->status_color,
+            'assigned_staff' => $r->assigned_staff,
+            'due_time'       => $r->due_time,
+            'note'           => $r->note,
+            'category'       => $category,
+        ];
+    }
+
+    // ─────────────────────────────────────────────
+    // RECENT ACTIVITY FEED
+    // ─────────────────────────────────────────────
+
+    public function recentActivity(array $filters = []): array
+    {
+        $user       = Auth::user();
+        $businessId = $user->business_id;
+        $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+
+        $activities = DB::table('lead_activities')
+            ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
+            ->leftJoin('users', 'lead_activities.user_id', '=', 'users.id')
+            ->where('lead_activities.business_id', $businessId)
+            ->whereNull('leads.deleted_at')
+            ->when($branchId, fn ($q) => $q->where('leads.branch_id', $branchId))
+            ->select(
+                'lead_activities.id',
+                'lead_activities.type',
+                'lead_activities.description',
+                'lead_activities.created_at',
+                'leads.id as lead_id',
+                'leads.name as lead_name',
+                'users.name as user_name'
+            )
+            ->orderByDesc('lead_activities.created_at')
+            ->limit(20)
+            ->get()
+            ->map(fn ($r) => [
+                'id'          => $r->id,
+                'type'        => $r->type,
+                'description' => $r->description,
+                'created_at'  => $r->created_at,
+                'lead_id'     => $r->lead_id,
+                'lead_name'   => $r->lead_name,
+                'user_name'   => $r->user_name,
+            ]);
+
+        return ['activities' => $activities];
+    }
+
+    // ─────────────────────────────────────────────
+    // REPORTS — LEADS ANALYSIS (Tab 2)
+    // ─────────────────────────────────────────────
+
+    public function leadsReport(array $filters = []): array
+    {
+        $user       = Auth::user();
+        $businessId = $user->business_id;
+        $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        $now        = Carbon::now();
+
+        $query = DB::table('leads')
+            ->leftJoin('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
+            ->leftJoin('users', 'leads.assigned_to', '=', 'users.id')
+            ->leftJoin('branches', 'leads.branch_id', '=', 'branches.id')
+            ->where('leads.business_id', $businessId)
+            ->whereNull('leads.deleted_at')
+            ->when($branchId, fn ($q) => $q->where('leads.branch_id', $branchId))
+            ->when($filters['source'] ?? null, fn ($q, $v) => $q->where('leads.source', $v))
+            ->when($filters['status_id'] ?? null, fn ($q, $v) => $q->where('leads.lead_status_id', $v))
+            ->when($filters['assigned_to'] ?? null, fn ($q, $v) => $q->where('leads.assigned_to', $v))
+            ->when($filters['date_from'] ?? null, fn ($q, $v) => $q->whereDate('leads.created_at', '>=', $v))
+            ->when($filters['date_to'] ?? null, fn ($q, $v) => $q->whereDate('leads.created_at', '<=', $v))
+            ->select(
+                'leads.id',
+                'leads.name',
+                'leads.mobile',
+                'leads.source',
+                'leads.created_at',
+                'leads.last_contacted_at',
+                'lead_statuses.name as status',
+                'lead_statuses.color as status_color',
+                'lead_statuses.is_converted',
+                'users.name as assigned_to',
+                'branches.name as branch'
+            )
+            ->orderByDesc('leads.created_at')
+            ->limit(500);
+
+        $leads = $query->get()->map(function ($r) use ($now) {
+            // Days since last contact
+            $daysSince = null;
+            $contactLabel = 'never';
+            if ($r->last_contacted_at) {
+                $daysSince = Carbon::parse($r->last_contacted_at)->diffInDays($now, false);
+                if ($daysSince <= 0) $contactLabel = 'today';
+                elseif ($daysSince <= 3) $contactLabel = '2-3 days';
+                else $contactLabel = '4+ days';
+            }
+
             return [
-                'source'          => $r->source ?: 'Unknown',
-                'total'           => (int) $r->total,
-                'converted'       => (int) $r->converted,
-                'conversion_rate' => $rate,
+                'id'                  => $r->id,
+                'name'                => $r->name,
+                'mobile'              => $r->mobile,
+                'source'              => $r->source ?: 'Unknown',
+                'status'              => $r->status,
+                'status_color'        => $r->status_color,
+                'is_converted'        => (bool) $r->is_converted,
+                'assigned_to'         => $r->assigned_to,
+                'branch'              => $r->branch,
+                'created_at'          => $r->created_at,
+                'last_contacted_at'   => $r->last_contacted_at,
+                'days_since_contact'  => $daysSince,
+                'contact_label'       => $contactLabel,
             ];
         });
 
-        return ['sources' => $rows->toArray()];
+        // Summary counts
+        $total     = $leads->count();
+        $converted = $leads->where('is_converted', true)->count();
+        $rate      = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
+
+        return [
+            'leads'   => $leads->values(),
+            'summary' => [
+                'total'           => $total,
+                'converted'       => $converted,
+                'conversion_rate' => $rate,
+            ],
+        ];
+    }
+
+    // ─────────────────────────────────────────────
+    // REPORTS — TEAM PERFORMANCE (Tab 3)
+    // ─────────────────────────────────────────────
+
+    public function teamReport(array $filters = []): array
+    {
+        $user       = Auth::user();
+        $businessId = $user->business_id;
+        $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        $dateFrom   = $filters['date_from'] ?? null;
+        $dateTo     = $filters['date_to'] ?? null;
+
+        $users = DB::table('users')
+            ->where('business_id', $businessId)
+            ->where('is_active', true)
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->select('id', 'name', 'email')
+            ->get();
+
+        // Get converted status IDs
+        $convertedStatusIds = DB::table('lead_statuses')
+            ->where('business_id', $businessId)
+            ->where('is_converted', true)
+            ->pluck('id');
+
+        $members = $users->map(function ($u) use ($businessId, $branchId, $dateFrom, $dateTo, $convertedStatusIds) {
+            $leadBase = DB::table('leads')
+                ->where('business_id', $businessId)
+                ->where('assigned_to', $u->id)
+                ->whereNull('deleted_at')
+                ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+                ->when($dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $dateFrom))
+                ->when($dateTo, fn ($q) => $q->whereDate('created_at', '<=', $dateTo));
+
+            $assigned  = (clone $leadBase)->count();
+            $converted = (clone $leadBase)->whereIn('lead_status_id', $convertedStatusIds)->count();
+            $contacted = (clone $leadBase)->whereNotNull('last_contacted_at')->count();
+            $convRate  = $assigned > 0 ? round(($converted / $assigned) * 100, 1) : 0;
+
+            // Missed follow-ups
+            $missedFollowups = DB::table('lead_followups')
+                ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
+                ->where('lead_followups.business_id', $businessId)
+                ->where('leads.assigned_to', $u->id)
+                ->where('lead_followups.status', 'pending')
+                ->where('lead_followups.follow_up_at', '<', Carbon::now())
+                ->when($dateFrom, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '>=', $dateFrom))
+                ->when($dateTo, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '<=', $dateTo))
+                ->count();
+
+            // Follow-up compliance
+            $totalFollowups = DB::table('lead_followups')
+                ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
+                ->where('lead_followups.business_id', $businessId)
+                ->where('leads.assigned_to', $u->id)
+                ->when($dateFrom, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '>=', $dateFrom))
+                ->when($dateTo, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '<=', $dateTo))
+                ->count();
+
+            $doneFollowups = DB::table('lead_followups')
+                ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
+                ->where('lead_followups.business_id', $businessId)
+                ->where('leads.assigned_to', $u->id)
+                ->where('lead_followups.status', 'done')
+                ->when($dateFrom, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '>=', $dateFrom))
+                ->when($dateTo, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '<=', $dateTo))
+                ->count();
+
+            $followupCompliance = $totalFollowups > 0
+                ? round(($doneFollowups / $totalFollowups) * 100, 1)
+                : null;
+
+            // Average response time (minutes from lead creation to first activity by this user)
+            $avgResponseTime = DB::table('lead_activities')
+                ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
+                ->where('lead_activities.business_id', $businessId)
+                ->where('lead_activities.user_id', $u->id)
+                ->where('leads.assigned_to', $u->id)
+                ->whereRaw('lead_activities.created_at = (SELECT MIN(la2.created_at) FROM lead_activities la2 WHERE la2.lead_id = lead_activities.lead_id AND la2.user_id = ?)', [$u->id])
+                ->when($dateFrom, fn ($q) => $q->whereDate('leads.created_at', '>=', $dateFrom))
+                ->when($dateTo, fn ($q) => $q->whereDate('leads.created_at', '<=', $dateTo))
+                ->selectRaw('AVG(EXTRACT(EPOCH FROM (lead_activities.created_at::timestamp - leads.created_at::timestamp)) / 60) as avg_minutes')
+                ->value('avg_minutes');
+
+            return [
+                'id'                   => $u->id,
+                'name'                 => $u->name,
+                'email'                => $u->email,
+                'assigned'             => $assigned,
+                'contacted'            => $contacted,
+                'converted'            => $converted,
+                'conversion_rate'      => $convRate,
+                'missed_followups'     => $missedFollowups,
+                'followup_compliance'  => $followupCompliance,
+                'done_followups'       => $doneFollowups,
+                'total_followups'      => $totalFollowups,
+                'avg_response_minutes' => $avgResponseTime ? round($avgResponseTime) : null,
+            ];
+        });
+
+        return ['members' => $members->values()];
+    }
+
+    // ─────────────────────────────────────────────
+    // REPORTS — SOURCES PERFORMANCE (Tab 4)
+    // ─────────────────────────────────────────────
+
+    public function sourcesReport(array $filters = []): array
+    {
+        $user       = Auth::user();
+        $businessId = $user->business_id;
+        $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        $dateFrom   = $filters['date_from'] ?? null;
+        $dateTo     = $filters['date_to'] ?? null;
+
+        $convertedStatusIds = DB::table('lead_statuses')
+            ->where('business_id', $businessId)
+            ->where('is_converted', true)
+            ->pluck('id')
+            ->toArray();
+
+        $sources = DB::table('leads')
+            ->where('business_id', $businessId)
+            ->whereNull('deleted_at')
+            ->when($branchId, fn ($q) => $q->where('branch_id', $branchId))
+            ->when($dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $dateFrom))
+            ->when($dateTo, fn ($q) => $q->whereDate('created_at', '<=', $dateTo))
+            ->select(
+                DB::raw("COALESCE(source, 'Unknown') as source"),
+                DB::raw('count(*) as total'),
+                DB::raw("count(case when lead_status_id in ('" . implode("','", $convertedStatusIds) . "') then 1 end) as converted"),
+                // Avg days to convert (created_at to converted_at)
+                DB::raw("AVG(CASE WHEN lead_status_id in ('" . implode("','", $convertedStatusIds) . "') AND converted_at IS NOT NULL THEN EXTRACT(EPOCH FROM (converted_at::timestamp - created_at::timestamp)) / 86400 ELSE NULL END) as avg_days_to_convert")
+            )
+            ->groupBy(DB::raw("COALESCE(source, 'Unknown')"))
+            ->orderByDesc('total')
+            ->get()
+            ->map(function ($r) {
+                $rate = $r->total > 0 ? round(($r->converted / $r->total) * 100, 1) : 0;
+                return [
+                    'source'              => $r->source,
+                    'total'               => $r->total,
+                    'converted'           => $r->converted,
+                    'conversion_rate'     => $rate,
+                    'avg_days_to_convert' => $r->avg_days_to_convert ? round($r->avg_days_to_convert, 1) : null,
+                ];
+            });
+
+        $grandTotal = $sources->sum('total');
+        $sourcesWithShare = $sources->map(function ($s) use ($grandTotal) {
+            $s['share'] = $grandTotal > 0 ? round(($s['total'] / $grandTotal) * 100, 1) : 0;
+            return $s;
+        });
+
+        return [
+            'sources'     => $sourcesWithShare->values(),
+            'grand_total' => $grandTotal,
+        ];
     }
 }

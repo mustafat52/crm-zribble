@@ -2,39 +2,53 @@
 
 namespace App\Modules\Reports\Controllers;
 
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use App\Modules\Reports\Services\ReportService;
 
 class ReportsController extends Controller
 {
-    public function __construct(protected ReportService $reportService) {}
+    public function __construct(private ReportService $reportService) {}
 
-    // GET /api/v1/reports/dashboard
-    public function dashboard(): JsonResponse
+    /** GET /reports/dashboard */
+    public function dashboard(Request $request)
     {
-        return response()->json($this->reportService->dashboardStats());
+        $filters = $request->only(['branch_id']);
+        return response()->json($this->reportService->dashboardStats($filters));
     }
 
-    // GET /api/v1/reports/leads
-    public function leads(Request $request): JsonResponse
+    /** GET /reports/action-queue */
+    public function actionQueue(Request $request)
     {
-        $filters = $request->only(['date_from', 'date_to', 'source', 'status_id', 'branch_id', 'assigned_to']);
+        $filters = $request->only(['branch_id']);
+        return response()->json($this->reportService->actionQueue($filters));
+    }
+
+    /** GET /reports/activity */
+    public function recentActivity(Request $request)
+    {
+        $filters = $request->only(['branch_id']);
+        return response()->json($this->reportService->recentActivity($filters));
+    }
+
+    /** GET /reports/leads */
+    public function leads(Request $request)
+    {
+        $filters = $request->only(['branch_id', 'source', 'status_id', 'assigned_to', 'date_from', 'date_to']);
         return response()->json($this->reportService->leadsReport($filters));
     }
 
-    // GET /api/v1/reports/team
-    public function team(Request $request): JsonResponse
+    /** GET /reports/team */
+    public function team(Request $request)
     {
-        $filters = $request->only(['date_from', 'date_to', 'branch_id']);
+        $filters = $request->only(['branch_id', 'date_from', 'date_to']);
         return response()->json($this->reportService->teamReport($filters));
     }
 
-    // GET /api/v1/reports/sources
-    public function sources(Request $request): JsonResponse
+    /** GET /reports/sources */
+    public function sources(Request $request)
     {
-        $filters = $request->only(['date_from', 'date_to', 'branch_id']);
+        $filters = $request->only(['branch_id', 'date_from', 'date_to']);
         return response()->json($this->reportService->sourcesReport($filters));
     }
 }

@@ -101,14 +101,28 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/{id}/read',  [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markRead']);
 
     // Reports
-    Route::get('/reports/dashboard', [\App\Modules\Reports\Controllers\ReportsController::class, 'dashboard']);
-    // Export
-    Route::post('/reports/exports', [ExportController::class, 'start']);
-    Route::get('/reports/exports/{exportId}/status', [ExportController::class, 'status']);
-    
-    Route::get('/reports/leads',   [\App\Modules\Reports\Controllers\ReportsController::class, 'leads']);
-    Route::get('/reports/team',    [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
-    Route::get('/reports/sources', [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
+    // ============================================================
+    // REPORTS ROUTES — replace the existing reports block in api.php
+    // Location: inside Route::middleware('auth:sanctum')->group(...)
+    // ============================================================
+
+    // Dashboard stats (branch-aware, Redis cached)
+    Route::get('reports/dashboard',      [\App\Modules\Reports\Controllers\ReportsController::class, 'dashboard']);
+
+    // Action Queue — new endpoint
+    Route::get('reports/action-queue',   [\App\Modules\Reports\Controllers\ReportsController::class, 'actionQueue']);
+
+    // Recent Activity Feed — new endpoint
+    Route::get('reports/activity',       [\App\Modules\Reports\Controllers\ReportsController::class, 'recentActivity']);
+
+    // Reports tabs
+    Route::get('reports/leads',          [\App\Modules\Reports\Controllers\ReportsController::class, 'leads']);
+    Route::get('reports/team',           [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
+    Route::get('reports/sources',        [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
+
+    // Exports (already exist — keep as-is)
+    Route::post('reports/exports',                        [\App\Modules\Reports\Controllers\ExportController::class, 'start']);
+    Route::get('reports/exports/{exportId}/status',       [\App\Modules\Reports\Controllers\ExportController::class, 'status']);
 
     // -------------------------------------------------------------------------
     // Agency Super Admin — agency_admin role only
