@@ -242,8 +242,22 @@ function ExportButton({ filters }: { filters: ReportFilters }) {
 
 // ─── TAB 1: Overview ─────────────────────────────────────────
 
+interface OverviewStats {
+  total: number
+  thisMonth: number
+  conversionRate: number
+  activeLeads: number
+  overdue: number
+  contactRate: number
+  converted: number
+  last7: { day: string; date: string; total: number }[]
+  byStatus: { name: string; color: string; total: number }[]
+  bySource: { source: string; total: number }[]
+  branchBreakdown: { branch: string; leads: number; converted: number; conversion_rate: number }[]
+}
+
 function OverviewTab({ branchId }: { branchId: string }) {
-  const { data: stats, isLoading } = useDashboardStatsForReports(branchId || undefined) as { data: any; isLoading: boolean }
+  const { data: stats, isLoading } = useDashboardStatsForReports(branchId || undefined) as { data: OverviewStats | undefined; isLoading: boolean }
   const showBranch = (stats?.branchBreakdown ?? []).length > 1
 
   const kpis = [
