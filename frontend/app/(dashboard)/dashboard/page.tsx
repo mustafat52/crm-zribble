@@ -8,6 +8,7 @@ import {
   useRecentActivity,
   useDashboardBranches,
   QueueItem,
+  Branch,
 } from '@/hooks/useDashboard'
 import { useAuthStore } from '@/store/useAuthStore'
 
@@ -199,7 +200,7 @@ export default function DashboardPage() {
 
   const branchFilter = isOwner ? (selectedBranch || undefined) : (user?.branch_id ?? undefined)
 
-  const { data: branches }  = useDashboardBranches() as { data: any[] | undefined }
+  const { data: branches }  = useDashboardBranches() as { data: Branch[] | undefined }
   const { data: stats, isLoading: statsLoading } = useDashboardStats(branchFilter)
   const { data: queue, isLoading: queueLoading } = useActionQueue(branchFilter)
   const { data: actData }                        = useRecentActivity(branchFilter)
@@ -246,7 +247,7 @@ export default function DashboardPage() {
               }}
             >
               <option value="">All Branches</option>
-              {(branches as any[]).map((b: any) => (
+              {(branches ?? []).map((b: Branch) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
@@ -434,7 +435,7 @@ export default function DashboardPage() {
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' }}>Stage</span>
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase' }}>Count</span>
                 </div>
-                {pipelineStages.map((stage: any, i: number) => (
+                {pipelineStages.map((stage: { name: string; color: string; total: number }, i: number) => (
                   <div key={i} style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '12px 20px', borderBottom: '1px solid var(--border)',

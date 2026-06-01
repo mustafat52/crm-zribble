@@ -69,7 +69,8 @@ export interface ReportTeamMember {
   name: string
 }
 
-// ─── Helpers ─────────────────────────────────────────────────
+// Re-export DashboardStats so ReportsView can import it without circular deps
+export type { DashboardStats } from '@/hooks/useDashboard'
 
 export function buildQs(filters: ReportFilters): string {
   const params = new URLSearchParams()
