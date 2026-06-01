@@ -12,6 +12,7 @@ use App\Modules\Leads\Controllers\LeadStatusController;
 use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
 use App\Modules\Reports\Controllers\ExportController;
+use App\Modules\Notifications\Controllers\PushSubscriptionController;
 
 
 // ---------------------------------------------------------------------------
@@ -100,6 +101,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/notifications/read-all',   [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markAllRead']);
     Route::post('/notifications/{id}/read',  [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markRead']);
 
+    Route::get('/push/vapid-public-key', [PushSubscriptionController::class, 'vapidPublicKey']);
+    Route::post('/push/subscribe',        [PushSubscriptionController::class, 'subscribe']);
+    Route::delete('/push/subscribe',      [PushSubscriptionController::class, 'unsubscribe']);
+    
     // Reports
     // ============================================================
     // REPORTS ROUTES — replace the existing reports block in api.php

@@ -6,6 +6,13 @@ import { Providers } from './providers'
 export const metadata: Metadata = {
   title: 'LeadOS',
   description: 'AI-powered Lead Management CRM',
+  manifest: '/manifest.json',
+  themeColor: '#7c3aed',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'LeadOS',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

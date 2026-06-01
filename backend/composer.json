@@ -11,6 +11,7 @@
         "laravel/sanctum": "^4.3",
         "laravel/tinker": "^2.9",
         "maatwebsite/excel": "^3.1",
+        "minishlink/web-push": "^10.1",
         "predis/predis": "^3.4",
         "resend/resend-laravel": "^1.4",
         "sentry/sentry-laravel": "^4.25",

@@ -4,12 +4,14 @@
 import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import NotificationBell from '@/components/modules/notifications/NotificationBell'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const isHydrated      = useAuthStore((s) => s._hasHydrated)
+  const { permission, subscribe } = usePushNotifications() 
 
   useEffect(() => {
     if (isHydrated && !isAuthenticated) router.replace('/login')
@@ -23,9 +25,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 }}>
         <Topbar />
-        <main style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-          {children}
-        </main>
+        {permission === 'default' && (
+        <div style={{
+          background: 'var(--bg2)',
+          borderBottom: '1px solid var(--border)',
+          padding: '10px 24px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '13px',
+          color: 'var(--text2)',
+          flexShrink: 0,
+        }}>
+          <span>🔔 Enable push notifications for instant lead and follow-up alerts</span>
+          <button onClick={subscribe} style={{
+            background: 'var(--accent)', color: '#fff', border: 'none',
+            borderRadius: '6px', padding: '5px 14px', fontSize: '12px',
+            cursor: 'pointer', fontWeight: 600, marginLeft: '16px',
+          }}>
+            Enable
+          </button>
+        </div>
+      )}
+      <main style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        {children}
+      </main>
       </div>
     </div>
   )
