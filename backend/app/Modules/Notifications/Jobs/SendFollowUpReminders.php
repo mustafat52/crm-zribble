@@ -2,9 +2,10 @@
 
 namespace App\Modules\Notifications\Jobs;
 
-use App\Models\InAppNotification;
-use App\Modules\Leads\Models\LeadFollowup;
-use App\Modules\Notifications\Services\WebPushService;
+use App\Models\AutomationLog;
+use App\Modules\Automations\Services\AutomationService;
+use App\Modules\Notifications\Models\InAppNotification;
+use App\Mail\LeadCreatedMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -23,118 +24,133 @@ class SendFollowUpReminders implements ShouldQueue
         $this->onQueue('reminders');
     }
 
+    /**
+     * Runs every 15 minutes via Laravel Scheduler.
+     *
+     * For each due follow-up:
+     *  1. Sends in-app notification to salesperson (existing T30)
+     *  2. Sends reminder email to salesperson (existing T30)
+     *  3. [NEW T41] Sends courtesy email to customer if lead has email
+     */
     public function handle(): void
     {
-        // Find all pending follow-ups due within the next 30 minutes
-        // that haven't been reminded yet. This job runs every 15 min
-        // via the scheduler in routes/console.php.
-        $dueFollowups = LeadFollowup::with(['lead'])
-            ->where('status', 'pending')
-            ->where('follow_up_at', '<=', now()->addMinutes(30))
-            ->whereNull('reminded_at')
+        $appUrl = rtrim(config('app.url'), '/');
+
+        $dueFollowups = DB::table('lead_followups')
+            ->join('leads', 'leads.id', '=', 'lead_followups.lead_id')
+            ->join('businesses', 'businesses.id', '=', 'lead_followups.business_id')
+            ->leftJoin('users', 'users.id', '=', 'lead_followups.assigned_to')
+            ->where('lead_followups.status', 'pending')
+            ->where('lead_followups.follow_up_at', '<=', now()->addMinutes(30))
+            ->whereNull('lead_followups.reminded_at')
+            ->select([
+                'lead_followups.id as followup_id',
+                'lead_followups.follow_up_at',
+                'lead_followups.note',
+                'lead_followups.assigned_to',
+                'lead_followups.business_id',
+                'leads.id as lead_id',
+                'leads.name as lead_name',
+                'leads.mobile as lead_mobile',
+                'leads.email as lead_email',
+                'businesses.name as business_name',
+                'users.email as assigned_email',
+                'users.name as assigned_name',
+            ])
             ->get();
 
         foreach ($dueFollowups as $followup) {
             try {
-                $lead = $followup->lead;
+                // ── Existing T30: Salesperson in-app + email reminder ──
+                $recipientEmail = $followup->assigned_email
+                    ?? $this->getOwnerEmail($followup->business_id);
 
-                if (!$lead) {
-                    Log::warning("SendFollowUpReminders: lead not found for followup {$followup->id}");
-                    continue;
+                if ($recipientEmail) {
+                    InAppNotification::create([
+                        'business_id' => $followup->business_id,
+                        'user_id'     => $followup->assigned_to ?? $this->getOwnerId($followup->business_id),
+                        'lead_id'     => $followup->lead_id,
+                        'type'        => 'follow_up_due',
+                        'title'       => "Follow-up Due: {$followup->lead_name}",
+                        'body'        => $followup->note ?? 'Follow-up scheduled for this lead.',
+                        'url'         => "/leads/{$followup->lead_id}",
+                        'is_read'     => false,
+                    ]);
+
+                    Mail::to($recipientEmail)->send(new LeadCreatedMail(
+                        leadName:     $followup->lead_name,
+                        leadMobile:   $followup->lead_mobile,
+                        leadSource:   'follow_up_reminder',
+                        businessName: $followup->business_name,
+                    ));
                 }
 
-                // ── Find recipient: assigned user or fall back to owner ────────
-                // Uses DB::table to bypass Eloquent global scopes (Business/Branch).
-                // Matches pattern used in NotifyOwnerOfNewLead and SendDailyDigest.
-                $recipient = null;
-
-                if ($followup->assigned_to) {
-                    $recipient = DB::table('users')
-                        ->where('id', $followup->assigned_to)
-                        ->where('is_active', true)
-                        ->select(['id', 'name', 'email'])
-                        ->first();
-                }
-
-                if (!$recipient) {
-                    // No assigned user — notify the business owner
-                    $recipient = DB::table('users')
-                        ->whereRaw(
-                            "id::text IN (
-                                SELECT model_id FROM model_has_roles
-                                WHERE role_id IN (
-                                    SELECT id FROM roles WHERE name = 'owner' AND guard_name = 'sanctum'
-                                )
-                            )"
-                        )
-                        ->where('business_id', $lead->business_id)
-                        ->where('is_active', true)
-                        ->select(['id', 'name', 'email'])
-                        ->first();
-                }
-
-                if (!$recipient) {
-                    Log::warning("SendFollowUpReminders: no recipient for followup {$followup->id}, lead {$lead->id}");
-                    $followup->update(['reminded_at' => now()]); // mark to avoid retry spam
-                    continue;
-                }
-
-                $title   = "Follow-Up Due: {$lead->name}";
-                $body    = $followup->note
-                    ? "📝 {$followup->note}"
-                    : "Scheduled for " . \Carbon\Carbon::parse($followup->follow_up_at)->format('h:i A');
-                $leadUrl = "/leads/{$lead->id}";
-
-                // ── 1. In-app notification ──────────────────────────────────
-                InAppNotification::create([
-                    'user_id'     => $recipient->id,
-                    'business_id' => $lead->business_id,
-                    'type'        => 'follow_up_due',
-                    'title'       => $title,
-                    'message'     => $body,
-                    'url'         => $leadUrl,
-                ]);
-
-                // ── 2. Email notification ───────────────────────────────────
-                // Uses a simple inline Mailable (no dedicated class needed).
-                // The business already gets a rich daily digest — this is
-                // just a plain alert to the individual salesperson.
-                try {
-                    Mail::raw(
-                        "Hi {$recipient->name},\n\nYou have a follow-up due:\n\n"
-                        . "Lead: {$lead->name}\n"
-                        . "Phone: {$lead->mobile}\n"
-                        . ($followup->note ? "Note: {$followup->note}\n" : '')
-                        . "\nOpen lead: " . config('app.frontend_url', 'http://localhost:3000') . $leadUrl,
-                        function ($message) use ($recipient, $title) {
-                            $message->to($recipient->email)
-                                    ->subject("⏰ {$title}");
-                        }
+                // ── NEW T41: Customer courtesy email ──
+                if (!empty($followup->lead_email)) {
+                    $automationService = app(AutomationService::class);
+                    $automationService->sendFollowUpCustomerEmail(
+                        followupId:    $followup->followup_id,
+                        businessId:    $followup->business_id,
+                        businessName:  $followup->business_name,
+                        customerName:  $followup->lead_name,
+                        customerEmail: $followup->lead_email,
+                        note:          $followup->note,
+                        appUrl:        $appUrl,
                     );
-                } catch (\Throwable $mailError) {
-                    // Email failure must not stop the push notification
-                    Log::warning("SendFollowUpReminders: email failed for {$recipient->email}: {$mailError->getMessage()}");
                 }
 
-                // ── 3. Push notification (T40) ──────────────────────────────
-                // sendToUser() is fully exception-safe — never throws.
-                WebPushService::sendToUser(
-                    userId: $recipient->id,
-                    title:  $title,
-                    body:   $body,
-                    url:    $leadUrl,
-                );
-
-                // ── Mark reminded — prevents duplicate sends ─────────────────
-                $followup->update(['reminded_at' => now()]);
-
-                Log::info("SendFollowUpReminders: reminded {$recipient->email} for lead {$lead->id}");
+                DB::table('lead_followups')
+                    ->where('id', $followup->followup_id)
+                    ->update(['reminded_at' => now()]);
 
             } catch (\Throwable $e) {
-                Log::error("SendFollowUpReminders: failed for followup {$followup->id}: {$e->getMessage()}", [
-                    'followup_id' => $followup->id,
+                Log::error('[SendFollowUpReminders] Failed to process follow-up', [
+                    'followup_id' => $followup->followup_id,
+                    'error'       => $e->getMessage(),
                 ]);
             }
         }
+    }
+
+    private function getOwnerEmail(string $businessId): ?string
+    {
+        $ownerRoleId = DB::table('roles')
+            ->where('name', 'owner')
+            ->where('guard_name', 'sanctum')
+            ->value('id');
+
+        if (!$ownerRoleId) return null;
+
+        $ownerIds = DB::table('model_has_roles')
+            ->where('role_id', $ownerRoleId)
+            ->where('model_type', 'App\\Models\\User')
+            ->pluck('model_id');
+
+        return DB::table('users')
+            ->where('business_id', $businessId)
+            ->whereIn('id', $ownerIds)
+            ->where('is_active', true)
+            ->value('email');
+    }
+
+    private function getOwnerId(string $businessId): ?string
+    {
+        $ownerRoleId = DB::table('roles')
+            ->where('name', 'owner')
+            ->where('guard_name', 'sanctum')
+            ->value('id');
+
+        if (!$ownerRoleId) return null;
+
+        $ownerIds = DB::table('model_has_roles')
+            ->where('role_id', $ownerRoleId)
+            ->where('model_type', 'App\\Models\\User')
+            ->pluck('model_id');
+
+        return DB::table('users')
+            ->where('business_id', $businessId)
+            ->whereIn('id', $ownerIds)
+            ->where('is_active', true)
+            ->value('id');
     }
 }

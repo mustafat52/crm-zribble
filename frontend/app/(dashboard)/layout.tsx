@@ -61,6 +61,7 @@ const NAV = [
   { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
   { label: 'Leads',     href: '/leads',    icon: UsersIcon },
   { label: 'Reports',   href: '/reports',  icon: ChartIcon },
+  { label: 'Automations', href: '/automation', icon: AutomationIcon },
   { label: 'Branches',  href: '/branches', icon: BranchIcon },
   { label: 'Settings',  href: '/settings', icon: SettingsIcon },
 ]
@@ -282,6 +283,14 @@ function ChartIcon({ active }: { active?: boolean }) {
   )
 }
 
+function AutomationIcon() {
+  return (
+    <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  )
+}
+
 function BranchIcon({ active }: { active?: boolean }) {
   return (
     <svg width="15" height="15" viewBox="0 0 15 15" fill="none" style={{ flexShrink: 0, opacity: active ? 1 : 0.7 }}>
@@ -320,3 +329,5 @@ function DashboardIcon({ active }: { active?: boolean }) {
     </svg>
   )
 }
+
+  

@@ -13,6 +13,7 @@ use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
 use App\Modules\Reports\Controllers\ExportController;
 use App\Modules\Notifications\Controllers\PushSubscriptionController;
+use App\Modules\Automations\Controllers\AutomationController;
 
 
 // ---------------------------------------------------------------------------
@@ -52,6 +53,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // Business settings
     Route::get('/business',  [BusinessController::class, 'show']);
     Route::put('/business',  [BusinessController::class, 'update']);
+
+    // Automation settings
+    Route::get('automations/settings',  [AutomationController::class, 'settings']);
+    Route::put('automations/settings',  [AutomationController::class, 'updateSettings']);
 
     // Lead statuses
     Route::get('/lead-statuses',          [LeadStatusController::class, 'index']);
