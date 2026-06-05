@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useAuthStore } from '@/store/useAuthStore'
 import {
   useBusiness, useUpdateBusiness,
@@ -25,17 +25,17 @@ const TIMEZONES = [
 // SettingsView — root component
 // ---------------------------------------------------------------------------
 export default function SettingsView() {
-  const isHydrated     = useAuthStore(s => s._hasHydrated)
+  const isHydrated      = useAuthStore(s => s._hasHydrated)
   const isAuthenticated = useAuthStore(s => s.isAuthenticated)
-  const user           = useAuthStore(s => s.user)
+  const user            = useAuthStore(s => s.user)
 
   const [activeTab, setActiveTab] = useState<'business' | 'statuses' | 'team' | 'apikeys'>('business')
 
   // All hooks called unconditionally — React rules of hooks
-  const businessQ  = useBusiness()
-  const statusesQ  = useLeadStatusesSettings()
-  const teamQ      = useTeamSettings()
-  const apiKeysQ   = useApiKeys()
+  const businessQ = useBusiness()
+  const statusesQ = useLeadStatusesSettings()
+  const teamQ     = useTeamSettings()
+  const apiKeysQ  = useApiKeys()
 
   if (!isHydrated) return null
   if (!isAuthenticated) return null
@@ -125,12 +125,15 @@ function BusinessTab({
 }: { data: ReturnType<typeof useBusiness>['data']; isLoading: boolean; isOwner: boolean }) {
   const update = useUpdateBusiness()
 
-  const [name,             setName]             = useState('')
-  const [timezone,         setTimezone]         = useState('')
-  const [whatsapp,         setWhatsapp]         = useState('')
-  const [dupHandling,      setDupHandling]      = useState<'merge' | 'new'>('merge')
-  const [saved,            setSaved]            = useState(false)
-  const [error,            setError]            = useState<string | null>(null)
+  const [name,           setName]           = useState('')
+  const [timezone,       setTimezone]       = useState('')
+  const [whatsapp,       setWhatsapp]       = useState('')
+  const [dupHandling,    setDupHandling]    = useState<'merge' | 'new'>('merge')
+  const [waLeadAlert,    setWaLeadAlert]    = useState(true)
+  const [waAcknowledge,  setWaAcknowledge]  = useState(true)
+  const [waFollowup,     setWaFollowup]     = useState(true)
+  const [saved,          setSaved]          = useState(false)
+  const [error,          setError]          = useState<string | null>(null)
 
   useEffect(() => {
     if (data) {
@@ -138,6 +141,9 @@ function BusinessTab({
       setTimezone(data.timezone ?? 'Asia/Kolkata')
       setWhatsapp(data.whatsapp_number ?? '')
       setDupHandling(data.duplicate_handling ?? 'merge')
+      setWaLeadAlert(data.settings?.wa_new_lead_alert as boolean ?? true)
+      setWaAcknowledge(data.settings?.wa_customer_acknowledgement as boolean ?? true)
+      setWaFollowup(data.settings?.wa_followup_reminder as boolean ?? true)
     }
   }, [data])
 
@@ -146,7 +152,17 @@ function BusinessTab({
   const handleSave = async () => {
     setError(null)
     try {
-      await update.mutateAsync({ name, timezone, whatsapp_number: whatsapp || null, duplicate_handling: dupHandling })
+      await update.mutateAsync({
+        name,
+        timezone,
+        whatsapp_number: whatsapp || null,
+        duplicate_handling: dupHandling,
+        settings: {
+          wa_new_lead_alert:           waLeadAlert,
+          wa_customer_acknowledgement: waAcknowledge,
+          wa_followup_reminder:        waFollowup,
+        },
+      })
       setSaved(true)
       setTimeout(() => setSaved(false), 2500)
     } catch (e: unknown) {
@@ -181,7 +197,7 @@ function BusinessTab({
         </select>
       </FieldRow>
 
-      <FieldRow label="WhatsApp Number">
+      <FieldRow label="WhatsApp Number" hint="This number receives new lead alerts and daily digests.">
         <input
           value={whatsapp}
           onChange={e => setWhatsapp(e.currentTarget.value)}
@@ -218,6 +234,51 @@ function BusinessTab({
         </div>
       </FieldRow>
 
+      {/* ── WhatsApp Notifications ── */}
+      <div style={{
+        marginTop: 24, marginBottom: 8,
+        paddingTop: 20, borderTop: '1px solid var(--border)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+            WhatsApp Notifications
+          </span>
+          <span style={{
+            fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
+            background: '#dcfce7', color: '#166534',
+          }}>
+            Active
+          </span>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 14, marginTop: -8 }}>
+          Choose which WhatsApp messages your business receives automatically.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <WaToggle
+            label="New lead alert to owner"
+            hint="Sends a WhatsApp message to your number every time a new lead comes in."
+            checked={waLeadAlert}
+            onChange={setWaLeadAlert}
+            disabled={!isOwner}
+          />
+          <WaToggle
+            label="Customer acknowledgement"
+            hint="Automatically sends a thank-you WhatsApp to the lead when they submit their enquiry."
+            checked={waAcknowledge}
+            onChange={setWaAcknowledge}
+            disabled={!isOwner}
+          />
+          <WaToggle
+            label="Follow-up reminders"
+            hint="Sends a WhatsApp reminder to the assigned salesperson before a scheduled follow-up."
+            checked={waFollowup}
+            onChange={setWaFollowup}
+            disabled={!isOwner}
+          />
+        </div>
+      </div>
+
       {error && <ErrorBanner message={error} />}
 
       {isOwner && (
@@ -226,6 +287,49 @@ function BusinessTab({
         </div>
       )}
     </Panel>
+  )
+}
+
+// ── WhatsApp toggle row ──────────────────────────────────────────────────────
+function WaToggle({
+  label, hint, checked, onChange, disabled,
+}: {
+  label: string; hint: string; checked: boolean
+  onChange: (v: boolean) => void; disabled: boolean
+}) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+      gap: 16, padding: '10px 14px', borderRadius: 8,
+      border: '1px solid var(--border)', background: 'var(--bg2)',
+    }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>
+          {label}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text3)' }}>{hint}</div>
+      </div>
+      {/* Toggle switch */}
+      <button
+        onClick={() => !disabled && onChange(!checked)}
+        disabled={disabled}
+        style={{
+          position: 'relative', width: 40, height: 22, borderRadius: 11,
+          border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+          background: checked ? 'var(--accent)' : '#d1d5db',
+          transition: 'background 0.2s',
+          flexShrink: 0, marginTop: 2,
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 3,
+          left: checked ? 21 : 3,
+          width: 16, height: 16, borderRadius: '50%',
+          background: '#fff', transition: 'left 0.2s',
+          display: 'block',
+        }} />
+      </button>
+    </div>
   )
 }
 
@@ -264,7 +368,7 @@ function StatusesTab({
     if (index === 0) return
     const prev = statuses[index - 1]
     updateStatus.mutate({ id: status.id, payload: { sort_order: prev.sort_order } })
-    updateStatus.mutate({ id: prev.id,    payload: { sort_order: status.sort_order } })
+    updateStatus.mutate({ id: prev.id,   payload: { sort_order: status.sort_order } })
   }
 
   const handleMoveDown = (status: LeadStatus, index: number) => {
@@ -292,7 +396,6 @@ function StatusesTab({
         {statuses.length === 0 && (
           <p style={{ color: 'var(--text3)', fontSize: 13, padding: '12px 0' }}>No statuses yet. Add your first one below.</p>
         )}
-
         {statuses.map((s, i) => (
           <StatusRow
             key={s.id}
@@ -311,9 +414,7 @@ function StatusesTab({
       {isOwner && (
         <div style={{ marginTop: 16 }}>
           {!showAdd ? (
-            <button onClick={() => setShowAdd(true)} style={ghostBtnStyle}>
-              + Add Status
-            </button>
+            <button onClick={() => setShowAdd(true)} style={ghostBtnStyle}>+ Add Status</button>
           ) : (
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: 12, background: 'var(--bg2)', borderRadius: 'var(--radius)', border: '1px solid var(--border)' }}>
               <input
@@ -352,9 +453,9 @@ function StatusRow({
   onMoveUp: () => void; onMoveDown: () => void; onDelete: () => void
   onUpdate: (p: Partial<LeadStatus>) => void
 }) {
-  const [editing, setEditing]   = useState(false)
-  const [name,    setName]      = useState(status.name)
-  const [color,   setColor]     = useState(status.color)
+  const [editing, setEditing] = useState(false)
+  const [name,    setName]    = useState(status.name)
+  const [color,   setColor]   = useState(status.color)
 
   const saveEdit = () => {
     onUpdate({ name, color })
@@ -367,7 +468,6 @@ function StatusRow({
       padding: '10px 12px', borderRadius: 'var(--radius)',
       border: '1px solid var(--border)', background: 'var(--bg)',
     }}>
-      {/* Color swatch */}
       {editing ? (
         <input type="color" value={color} onChange={e => setColor(e.currentTarget.value)}
           style={{ width: 28, height: 28, border: 'none', padding: 0, cursor: 'pointer', borderRadius: 4 }} />
@@ -375,7 +475,6 @@ function StatusRow({
         <div style={{ width: 14, height: 14, borderRadius: '50%', background: status.color, flexShrink: 0 }} />
       )}
 
-      {/* Name */}
       {editing ? (
         <input value={name} onChange={e => setName(e.currentTarget.value)}
           style={{ ...inputStyle(false), flex: 1, padding: '4px 8px' }}
@@ -384,26 +483,24 @@ function StatusRow({
         <span style={{ flex: 1, fontSize: 13, color: 'var(--text)' }}>{status.name}</span>
       )}
 
-      {/* Flags */}
       <div style={{ display: 'flex', gap: 6 }}>
         {status.is_converted && <FlagBadge label="Converted" color="#16a34a" />}
         {status.is_lost      && <FlagBadge label="Lost"      color="#dc2626" />}
       </div>
 
-      {/* Actions */}
       {isOwner && (
         <div style={{ display: 'flex', gap: 4 }}>
           {editing ? (
             <>
-              <ActionBtn label="Save"   onClick={saveEdit}           color="var(--accent)" />
+              <ActionBtn label="Save"   onClick={saveEdit}               color="var(--accent)" />
               <ActionBtn label="Cancel" onClick={() => setEditing(false)} />
             </>
           ) : (
             <>
-              <ActionBtn label="↑"    onClick={onMoveUp}   disabled={index === 0} />
-              <ActionBtn label="↓"    onClick={onMoveDown} disabled={index === total - 1} />
-              <ActionBtn label="Edit" onClick={() => setEditing(true)} />
-              <ActionBtn label="Delete" onClick={onDelete} color="#dc2626" />
+              <ActionBtn label="↑"      onClick={onMoveUp}   disabled={index === 0} />
+              <ActionBtn label="↓"      onClick={onMoveDown} disabled={index === total - 1} />
+              <ActionBtn label="Edit"   onClick={() => setEditing(true)} />
+              <ActionBtn label="Delete" onClick={onDelete}   color="#dc2626" />
             </>
           )}
         </div>
@@ -453,12 +550,8 @@ function TeamTab({
     <Panel title="Team Members">
       {!isOwner && <OwnerOnlyBanner />}
 
-      {/* Temp password reveal */}
       {tempPassword && (
-        <div style={{
-          padding: 14, borderRadius: 'var(--radius)', background: '#f0fdf4',
-          border: '1px solid #bbf7d0', marginBottom: 16,
-        }}>
+        <div style={{ padding: 14, borderRadius: 'var(--radius)', background: '#f0fdf4', border: '1px solid #bbf7d0', marginBottom: 16 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: '#15803d', margin: '0 0 6px' }}>
             ✅ User created — share this password with them now. It will not be shown again.
           </p>
@@ -466,14 +559,12 @@ function TeamTab({
             <code style={{ flex: 1, padding: '6px 10px', background: '#dcfce7', borderRadius: 6, fontSize: 14, fontFamily: 'monospace' }}>
               {tempPassword}
             </code>
-            <button onClick={() => { navigator.clipboard.writeText(tempPassword); }}
-              style={primaryBtnStyle}>Copy</button>
+            <button onClick={() => { navigator.clipboard.writeText(tempPassword) }} style={primaryBtnStyle}>Copy</button>
             <button onClick={() => setTempPassword(null)} style={ghostBtnStyle}>Dismiss</button>
           </div>
         </div>
       )}
 
-      {/* Invite modal */}
       {showInvite && (
         <div style={{ padding: 16, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--bg2)', marginBottom: 16 }}>
           <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, color: 'var(--text)' }}>Invite Team Member</h3>
@@ -514,7 +605,6 @@ function TeamTab({
         </div>
       )}
 
-      {/* Members table */}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
@@ -557,9 +647,9 @@ function TeamRow({
   onUpdate: (p: { role?: string; branch_id?: string; is_active?: boolean }) => void
   onDeactivate: () => void
 }) {
-  const [editing, setEditing]   = useState(false)
-  const [role,    setRole]      = useState(member.roles[0] ?? 'executive')
-  const [branch,  setBranch]    = useState(member.branch_id ?? '')
+  const [editing, setEditing] = useState(false)
+  const [role,    setRole]    = useState(member.roles[0] ?? 'executive')
+  const [branch,  setBranch]  = useState(member.branch_id ?? '')
 
   const saveEdit = () => {
     onUpdate({ role: role as 'manager' | 'executive' | 'read-only', branch_id: branch || undefined })
@@ -567,8 +657,7 @@ function TeamRow({
   }
 
   return (
-    <tr style={{ borderBottom: '1px solid var(--border2 )', background: 'transparent' }}>
-      {/* Member */}
+    <tr style={{ borderBottom: '1px solid var(--border)', background: 'transparent' }}>
       <td style={{ padding: '10px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{
@@ -579,13 +668,13 @@ function TeamRow({
             {member.initials}
           </div>
           <div>
-            <div style={{ fontWeight: 500, color: 'var(--text)' }}>{member.name} {isSelf && <span style={{ color: 'var(--text3)', fontSize: 11 }}>(you)</span>}</div>
+            <div style={{ fontWeight: 500, color: 'var(--text)' }}>
+              {member.name} {isSelf && <span style={{ color: 'var(--text3)', fontSize: 11 }}>(you)</span>}
+            </div>
             <div style={{ color: 'var(--text3)', fontSize: 11 }}>{member.email}</div>
           </div>
         </div>
       </td>
-
-      {/* Role */}
       <td style={{ padding: '10px 10px' }}>
         {editing ? (
           <select value={role} onChange={e => setRole(e.currentTarget.value)} style={{ ...inputStyle(false), padding: '3px 6px', fontSize: 12 }}>
@@ -597,8 +686,6 @@ function TeamRow({
           <RoleBadge role={member.roles[0] ?? '—'} />
         )}
       </td>
-
-      {/* Branch */}
       <td style={{ padding: '10px 10px', color: 'var(--text2)', fontSize: 12 }}>
         {editing ? (
           <select value={branch} onChange={e => setBranch(e.currentTarget.value)} style={{ ...inputStyle(false), padding: '3px 6px', fontSize: 12 }}>
@@ -611,8 +698,6 @@ function TeamRow({
           member.branch?.name ?? <span style={{ color: 'var(--text3)' }}>—</span>
         )}
       </td>
-
-      {/* Status */}
       <td style={{ padding: '10px 10px' }}>
         <span style={{
           display: 'inline-block', padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600,
@@ -622,14 +707,12 @@ function TeamRow({
           {member.is_active ? 'Active' : 'Inactive'}
         </span>
       </td>
-
-      {/* Actions */}
       {isOwner && (
         <td style={{ padding: '10px 10px' }}>
           <div style={{ display: 'flex', gap: 4 }}>
             {editing ? (
               <>
-                <ActionBtn label="Save"   onClick={saveEdit} color="var(--accent)" />
+                <ActionBtn label="Save"   onClick={saveEdit}               color="var(--accent)" />
                 <ActionBtn label="Cancel" onClick={() => setEditing(false)} />
               </>
             ) : (
@@ -638,7 +721,7 @@ function TeamRow({
                   <>
                     <ActionBtn label="Edit" onClick={() => setEditing(true)} />
                     {member.is_active
-                      ? <ActionBtn label="Deactivate" onClick={onDeactivate} color="#dc2626" />
+                      ? <ActionBtn label="Deactivate" onClick={onDeactivate}                        color="#dc2626" />
                       : <ActionBtn label="Activate"   onClick={() => onUpdate({ is_active: true })} color="#16a34a" />
                     }
                   </>
@@ -661,10 +744,10 @@ function ApiKeysTab({
   const create = useCreateApiKey()
   const revoke = useRevokeApiKey()
 
-  const [showCreate,   setShowCreate]   = useState(false)
-  const [keyName,      setKeyName]      = useState('')
-  const [revealedKey,  setRevealedKey]  = useState<string | null>(null)
-  const [createError,  setCreateError]  = useState<string | null>(null)
+  const [showCreate,  setShowCreate]  = useState(false)
+  const [keyName,     setKeyName]     = useState('')
+  const [revealedKey, setRevealedKey] = useState<string | null>(null)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   if (isLoading) return <SkeletonBlock lines={3} />
 
@@ -685,7 +768,6 @@ function ApiKeysTab({
     <Panel title="API Keys">
       {!isOwner && <OwnerOnlyBanner />}
 
-      {/* Revealed key banner */}
       {revealedKey && (
         <div style={{ padding: 14, borderRadius: 'var(--radius)', background: '#fefce8', border: '1px solid #fde047', marginBottom: 16 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: '#a16207', margin: '0 0 6px' }}>
@@ -701,7 +783,6 @@ function ApiKeysTab({
         </div>
       )}
 
-      {/* Keys list */}
       {keys.length === 0 && !showCreate && (
         <p style={{ color: 'var(--text3)', fontSize: 13, padding: '12px 0' }}>
           No API keys yet. Generate one to start pushing leads from external sources.
@@ -741,7 +822,6 @@ function ApiKeysTab({
         ))}
       </div>
 
-      {/* Generate key form */}
       {isOwner && (
         <div style={{ marginTop: 16 }}>
           {!showCreate ? (

@@ -2,38 +2,65 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import axios from 'axios';
 
-// ─── The axios instance ───────────────────────────────────────────────────────
-// Matches how the rest of the app calls the API (lib/api.ts pattern).
-// useDashboard.ts and useReports.ts both rely on an axios instance with
-// baseURL and Authorization header. We replicate that here for consistency.
-function getApiClient() {
-  const token =
-    typeof window !== 'undefined'
-      ? (() => {
-          try {
-            // Read the Zustand-persisted auth store from localStorage
-            const raw = localStorage.getItem('auth-storage');
-            if (!raw) return null;
-            const parsed = JSON.parse(raw);
-            return parsed?.state?.token ?? null;
-          } catch {
-            return null;
-          }
-        })()
-      : null;
+// ─── API helper ──────────────────────────────────────────────────────────────
+// Uses native fetch — no axios dependency needed.
+// Reads token from Zustand-persisted auth store in localStorage.
 
-  return axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000/api/v1',
+function getToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('auth-storage');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.state?.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const BASE_URL =
+  (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000') + '/api/v1';
+
+async function apiGet<T>(path: string): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
+  if (!res.ok) throw new Error(`GET ${path} failed: ${res.status}`);
+  return res.json();
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+async function apiPost(path: string, body: unknown): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`POST ${path} failed: ${res.status}`);
+}
+
+async function apiDelete(path: string, body: unknown): Promise<void> {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`DELETE ${path} failed: ${res.status}`);
+}
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type PushPermission = 'default' | 'granted' | 'denied' | 'unsupported';
 
@@ -45,7 +72,7 @@ export interface UsePushNotificationsReturn {
   unsubscribe:  () => Promise<void>;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function isPushSupported(): boolean {
   return (
@@ -91,26 +118,22 @@ async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null
 
 async function fetchVapidPublicKey(): Promise<string | null> {
   try {
-    const client = getApiClient();
-    const res    = await client.get<{ public_key: string }>('/push/vapid-public-key');
-    return res.data?.public_key ?? null;
+    const data = await apiGet<{ public_key: string }>('/push/vapid-public-key');
+    return data?.public_key ?? null;
   } catch {
     return null;
   }
 }
 
 async function saveSubscriptionToBackend(sub: PushSubscription): Promise<void> {
-  const client  = getApiClient();
-  const payload = serializeSubscription(sub);
-  await client.post('/push/subscribe', payload);
+  await apiPost('/push/subscribe', serializeSubscription(sub));
 }
 
 async function deleteSubscriptionFromBackend(endpoint: string): Promise<void> {
-  const client = getApiClient();
-  await client.delete('/push/subscribe', { data: { endpoint } });
+  await apiDelete('/push/subscribe', { endpoint });
 }
 
-// ─── Hook ─────────────────────────────────────────────────────────────────────
+// ─── Hook ────────────────────────────────────────────────────────────────────
 
 /**
  * usePushNotifications
@@ -164,7 +187,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
       const existing = await reg.pushManager.getSubscription();
       if (existing) {
         setIsSubscribed(true);
-        return; // Already subscribed on this device — nothing to do
+        return;
       }
 
       const vapidKey = await fetchVapidPublicKey();
@@ -197,7 +220,6 @@ export function usePushNotifications(): UsePushNotificationsReturn {
         return;
       }
 
-      // This line triggers the "Allow notifications?" browser prompt
       const subscription = await reg.pushManager.subscribe({
         userVisibleOnly:      true,
         applicationServerKey: urlBase64ToUint8Array(vapidKey),
@@ -216,7 +238,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     }
   }
 
-  // ── Manual unsubscribe ─────────────────────────────────────────────────────
+  // ── Manual unsubscribe ────────────────────────────────────────────────────
   async function unsubscribe(): Promise<void> {
     if (!isPushSupported()) return;
     setIsLoading(true);

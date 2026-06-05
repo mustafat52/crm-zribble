@@ -5,8 +5,9 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 
 const NAV = [
-  { label: 'Overview', href: '/admin/overview' },
+  { label: 'Overview',   href: '/admin/overview' },
   { label: 'Businesses', href: '/admin/businesses' },
+  { label: 'WhatsApp',   href: '/admin/whatsapp' },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

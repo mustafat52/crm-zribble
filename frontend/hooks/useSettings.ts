@@ -24,6 +24,7 @@ export interface BusinessUpdatePayload {
   timezone?: string
   whatsapp_number?: string | null
   duplicate_handling?: 'merge' | 'new'
+  settings?: Record<string, unknown>
 }
 
 export interface LeadStatus {

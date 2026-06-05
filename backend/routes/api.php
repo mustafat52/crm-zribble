@@ -14,6 +14,7 @@ use App\Modules\Leads\Controllers\IngestController;
 use App\Modules\Reports\Controllers\ExportController;
 use App\Modules\Notifications\Controllers\PushSubscriptionController;
 use App\Modules\Automations\Controllers\AutomationController;
+use App\Modules\WhatsApp\Controllers\WhatsAppTemplateController;
 
 
 // ---------------------------------------------------------------------------
@@ -102,56 +103,44 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/branches/{id}',     [BranchController::class, 'destroy']);
 
     // In-app notifications
-    Route::get('/notifications',             [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'index']);
-    Route::post('/notifications/read-all',   [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markAllRead']);
-    Route::post('/notifications/{id}/read',  [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markRead']);
+    Route::get('/notifications',            [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'index']);
+    Route::post('/notifications/read-all',  [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markAllRead']);
+    Route::post('/notifications/{id}/read', [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'markRead']);
 
+    // Push notifications
     Route::get('/push/vapid-public-key', [PushSubscriptionController::class, 'vapidPublicKey']);
-    Route::post('/push/subscribe',        [PushSubscriptionController::class, 'subscribe']);
-    Route::delete('/push/subscribe',      [PushSubscriptionController::class, 'unsubscribe']);
-    
+    Route::post('/push/subscribe',       [PushSubscriptionController::class, 'subscribe']);
+    Route::delete('/push/subscribe',     [PushSubscriptionController::class, 'unsubscribe']);
+
     // Reports
-    // ============================================================
-    // REPORTS ROUTES — replace the existing reports block in api.php
-    // Location: inside Route::middleware('auth:sanctum')->group(...)
-    // ============================================================
+    Route::get('reports/dashboard',    [\App\Modules\Reports\Controllers\ReportsController::class, 'dashboard']);
+    Route::get('reports/action-queue', [\App\Modules\Reports\Controllers\ReportsController::class, 'actionQueue']);
+    Route::get('reports/activity',     [\App\Modules\Reports\Controllers\ReportsController::class, 'recentActivity']);
+    Route::get('reports/leads',        [\App\Modules\Reports\Controllers\ReportsController::class, 'leads']);
+    Route::get('reports/team',         [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
+    Route::get('reports/sources',      [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
 
-    // Dashboard stats (branch-aware, Redis cached)
-    Route::get('reports/dashboard',      [\App\Modules\Reports\Controllers\ReportsController::class, 'dashboard']);
+    // Exports
+    Route::post('reports/exports',                  [\App\Modules\Reports\Controllers\ExportController::class, 'start']);
+    Route::get('reports/exports/{exportId}/status', [\App\Modules\Reports\Controllers\ExportController::class, 'status']);
 
-    // Action Queue — new endpoint
-    Route::get('reports/action-queue',   [\App\Modules\Reports\Controllers\ReportsController::class, 'actionQueue']);
+    // WhatsApp Templates
+    Route::get('whatsapp/templates',         [WhatsAppTemplateController::class, 'index']);
+    Route::post('whatsapp/templates',        [WhatsAppTemplateController::class, 'store']);
+    Route::put('whatsapp/templates/{id}',    [WhatsAppTemplateController::class, 'update']);
+    Route::delete('whatsapp/templates/{id}', [WhatsAppTemplateController::class, 'destroy']);
 
-    // Recent Activity Feed — new endpoint
-    Route::get('reports/activity',       [\App\Modules\Reports\Controllers\ReportsController::class, 'recentActivity']);
-
-    // Reports tabs
-    Route::get('reports/leads',          [\App\Modules\Reports\Controllers\ReportsController::class, 'leads']);
-    Route::get('reports/team',           [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
-    Route::get('reports/sources',        [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
-
-    // Exports (already exist — keep as-is)
-    Route::post('reports/exports',                        [\App\Modules\Reports\Controllers\ExportController::class, 'start']);
-    Route::get('reports/exports/{exportId}/status',       [\App\Modules\Reports\Controllers\ExportController::class, 'status']);
-
-    // -------------------------------------------------------------------------
-    // Agency Super Admin — agency_admin role only
-    // -------------------------------------------------------------------------
+    // Agency panel
     Route::middleware('agency_access')->prefix('agency')->group(function () {
-    // Shared routes — both admin and staff (data filtered inside controller)
-    Route::get('stats', [\App\Modules\Auth\Controllers\AgencyController::class, 'stats']);
-    Route::get('businesses', [\App\Modules\Auth\Controllers\AgencyController::class, 'businesses']);
-    Route::get('businesses/{id}', [\App\Modules\Auth\Controllers\AgencyController::class, 'showBusiness']);
-
-    // Admin-only routes (controller enforces internally)
-    Route::put('businesses/{id}/toggle', [\App\Modules\Auth\Controllers\AgencyController::class, 'toggleBusiness']);
-
-    // Staff management (admin only — controller enforces)
-    Route::get('staff', [\App\Modules\Auth\Controllers\AgencyController::class, 'staffList']);
-    Route::post('staff', [\App\Modules\Auth\Controllers\AgencyController::class, 'inviteStaff']);
-    Route::post('staff/{staffId}/assign', [\App\Modules\Auth\Controllers\AgencyController::class, 'assignBusiness']);
-    Route::delete('staff/{staffId}/assign', [\App\Modules\Auth\Controllers\AgencyController::class, 'unassignBusiness']);
-});
+        Route::get('stats',                  [\App\Modules\Auth\Controllers\AgencyController::class, 'stats']);
+        Route::get('businesses',             [\App\Modules\Auth\Controllers\AgencyController::class, 'businesses']);
+        Route::get('businesses/{id}',        [\App\Modules\Auth\Controllers\AgencyController::class, 'showBusiness']);
+        Route::put('businesses/{id}/toggle', [\App\Modules\Auth\Controllers\AgencyController::class, 'toggleBusiness']);
+        Route::get('staff',                  [\App\Modules\Auth\Controllers\AgencyController::class, 'staffList']);
+        Route::post('staff',                 [\App\Modules\Auth\Controllers\AgencyController::class, 'inviteStaff']);
+        Route::post('staff/{staffId}/assign',   [\App\Modules\Auth\Controllers\AgencyController::class, 'assignBusiness']);
+        Route::delete('staff/{staffId}/assign', [\App\Modules\Auth\Controllers\AgencyController::class, 'unassignBusiness']);
+    });
 
 });
 
