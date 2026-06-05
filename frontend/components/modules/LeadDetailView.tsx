@@ -13,6 +13,7 @@ import {
 } from '@/hooks/useLead'
 import { useLeadStatuses, useTeamMembers } from '@/hooks/useLeadMeta'
 import { useFollowups, useMarkFollowupDone, type Followup } from '@/hooks/useFollowups'
+import { useLeadWhatsApp, type WaConversation } from '@/hooks/useWhatsApp'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -49,8 +50,6 @@ function fmtDateTime(iso: string | null): string {
   })
 }
 
-
-
 function sourceLabel(source: string): string {
   const map: Record<string, string> = {
     website: 'Website', meta: 'Meta Ads', whatsapp: 'WhatsApp',
@@ -61,26 +60,26 @@ function sourceLabel(source: string): string {
 }
 
 const ACTIVITY_ICONS: Record<string, string> = {
-  created:        '✦',
-  status_changed: '⇄',
-  assignment:     '→',
-  note:           '✎',
-  call_log:       '☎',
-  followup_set:   '⏰',
-  whatsapp_sent:  '💬',
-  email_sent:     '✉',
+  created:          '✪',
+  status_changed:   '⇄',
+  assignment:       '→',
+  note:             '✄',
+  call_log:         '✆',
+  followup_set:     '░',
+  whatsapp_sent:    '💬',
+  email_sent:       '✉',
   duplicate_merged: '⊕',
 }
 
 const ACTIVITY_COLORS: Record<string, string> = {
-  created:        '#7c3aed',
-  status_changed: '#f59e0b',
-  assignment:     '#3b82f6',
-  note:           '#6b7280',
-  call_log:       '#10b981',
-  followup_set:   '#8b5cf6',
-  whatsapp_sent:  '#25d366',
-  email_sent:     '#6366f1',
+  created:          '#7c3aed',
+  status_changed:   '#f59e0b',
+  assignment:       '#3b82f6',
+  note:             '#6b7280',
+  call_log:         '#10b981',
+  followup_set:     '#8b5cf6',
+  whatsapp_sent:    '#25d366',
+  email_sent:       '#6366f1',
   duplicate_merged: '#ef4444',
 }
 
@@ -146,18 +145,105 @@ function SectionCard({ title, children }: { title: string; children: React.React
   )
 }
 
+// ── WhatsApp Conversation History ─────────────────────────────────────────────
+
+function WhatsAppHistory({ leadId }: { leadId: string }) {
+  const { data: conversations = [], isLoading } = useLeadWhatsApp(leadId)
+
+  if (isLoading) return null
+  if (!conversations.length) return null
+
+  const STATUS_COLOR: Record<string, string> = {
+    sent:      '#6b7280',
+    delivered: '#3b82f6',
+    read:      '#10b981',
+    failed:    '#ef4444',
+    skipped:   '#f59e0b',
+  }
+
+  const STATUS_LABEL: Record<string, string> = {
+    sent:      '✓ Sent',
+    delivered: '✓✓ Delivered',
+    read:      '✓✓ Read',
+    failed:    '✗ Failed',
+    skipped:   '⏭ Skipped',
+  }
+
+  return (
+    <SectionCard title={`WhatsApp (${conversations.length})`}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {conversations.map((c: WaConversation) => {
+          const isOutbound = c.direction === 'outbound'
+          const statusColor = STATUS_COLOR[c.status] ?? '#6b7280'
+
+          return (
+            <div key={c.id} style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: isOutbound ? 'flex-end' : 'flex-start',
+            }}>
+              <div style={{
+                maxWidth: '85%',
+                padding: '10px 14px',
+                borderRadius: isOutbound ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                background: isOutbound ? '#dcfce7' : '#f3f4f6',
+                border: `1px solid ${isOutbound ? '#bbf7d0' : '#e5e7eb'}`,
+              }}>
+                {/* Template name */}
+                {c.template_name && (
+                  <div style={{
+                    fontSize: 10, fontWeight: 700, color: '#15803d',
+                    textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4,
+                  }}>
+                    {c.template_name}
+                  </div>
+                )}
+                {/* Body */}
+                <div style={{
+                  fontSize: 13, color: '#111827', lineHeight: 1.5,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                }}>
+                  {c.body ?? '(no message body)'}
+                </div>
+              </div>
+
+              {/* Meta row */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                marginTop: 4, paddingLeft: 4, paddingRight: 4,
+              }}>
+                <span style={{ fontSize: 10, color: '#9ca3af' }}>
+                  {isOutbound ? 'To: ' + (c.recipient ?? '') : 'Inbound'}
+                </span>
+                <span style={{ fontSize: 10, color: '#9ca3af' }}>·</span>
+                <span style={{ fontSize: 10, color: '#9ca3af' }}>
+                  {c.sent_at ? timeAgo(c.sent_at) : ''}
+                </span>
+                <span style={{ fontSize: 10, color: '#9ca3af' }}>·</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: statusColor }}>
+                  {STATUS_LABEL[c.status] ?? c.status}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </SectionCard>
+  )
+}
+
 // ── Action Panel ──────────────────────────────────────────────────────────────
 
 function ActionPanel({ lead }: { lead: LeadDetail }) {
   const [tab, setTab] = useState<'note' | 'status' | 'assign' | 'followup'>('note')
-  const [note, setNote]         = useState('')
-  const [noteType, setNoteType] = useState('note')
-  const [selStatus, setSelStatus] = useState(lead.lead_status_id)
-  const [selUser, setSelUser]     = useState(lead.assigned_to ?? '')
-  const [followupAt, setFollowupAt] = useState('')
+  const [note, setNote]               = useState('')
+  const [noteType, setNoteType]       = useState('note')
+  const [selStatus, setSelStatus]     = useState(lead.lead_status_id)
+  const [selUser, setSelUser]         = useState(lead.assigned_to ?? '')
+  const [followupAt, setFollowupAt]   = useState('')
   const [followupNote, setFollowupNote] = useState('')
-  const [saving, setSaving]  = useState(false)
-  const [success, setSuccess] = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [success, setSuccess]         = useState('')
 
   const { data: statuses = [] } = useLeadStatuses()
   const { data: team = [] }     = useTeamMembers()
@@ -178,18 +264,18 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
       if (tab === 'note') {
         await addNote.mutateAsync({ note, type: noteType })
         setNote('')
-        flash('Note added ✓')
+        flash('Note added ✔')
       } else if (tab === 'status') {
         await changeStatus.mutateAsync({ lead_status_id: selStatus })
-        flash('Status updated ✓')
+        flash('Status updated ✔')
       } else if (tab === 'assign') {
         await assignLead.mutateAsync({ user_id: selUser || null })
-        flash('Lead assigned ✓')
+        flash('Lead assigned ✔')
       } else if (tab === 'followup') {
         await setFollowUp.mutateAsync({ followup_at: followupAt, note: followupNote })
         setFollowupAt('')
         setFollowupNote('')
-        flash('Follow-up set ✓')
+        flash('Follow-up set ✔')
       }
     } catch {
       // errors handled globally via api.ts
@@ -199,10 +285,10 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
   }
 
   const tabs = [
-    { key: 'note',     label: '✎ Note' },
+    { key: 'note',     label: '✄ Note' },
     { key: 'status',   label: '⇄ Status' },
     { key: 'assign',   label: '→ Assign' },
-    { key: 'followup', label: '⏰ Follow-up' },
+    { key: 'followup', label: '░ Follow-up' },
   ] as const
 
   return (
@@ -309,10 +395,7 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
 function ActivityTimeline({ activities }: { activities: Activity[] }) {
   if (!activities.length) {
     return (
-      <div style={{
-        textAlign: 'center', padding: '32px 0',
-        color: '#9ca3af', fontSize: 13,
-      }}>
+      <div style={{ textAlign: 'center', padding: '32px 0', color: '#9ca3af', fontSize: 13 }}>
         No activity yet. Actions on this lead will appear here.
       </div>
     )
@@ -321,13 +404,12 @@ function ActivityTimeline({ activities }: { activities: Activity[] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {activities.map((act, i) => {
-        const color = ACTIVITY_COLORS[act.type] ?? '#6b7280'
-        const icon  = ACTIVITY_ICONS[act.type]  ?? '·'
+        const color  = ACTIVITY_COLORS[act.type] ?? '#6b7280'
+        const icon   = ACTIVITY_ICONS[act.type]  ?? '·'
         const isLast = i === activities.length - 1
 
         return (
           <div key={act.id} style={{ display: 'flex', gap: 12 }}>
-            {/* Timeline spine */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: 28 }}>
               <div style={{
                 width: 28, height: 28, borderRadius: '50%',
@@ -342,18 +424,12 @@ function ActivityTimeline({ activities }: { activities: Activity[] }) {
               )}
             </div>
 
-            {/* Content */}
             <div style={{ paddingBottom: isLast ? 0 : 16, flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
-                <p style={{
-                  margin: 0, fontSize: 13, color: '#374151',
-                  lineHeight: 1.5, wordBreak: 'break-word',
-                }}>
+                <p style={{ margin: 0, fontSize: 13, color: '#374151', lineHeight: 1.5, wordBreak: 'break-word' }}>
                   {act.description}
                 </p>
-                <span style={{
-                  fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2,
-                }}>
+                <span style={{ fontSize: 11, color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0, marginTop: 2 }}>
                   {timeAgo(act.created_at)}
                 </span>
               </div>
@@ -396,7 +472,6 @@ const selectStyle: React.CSSProperties = {
   ...inputStyle, cursor: 'pointer',
 }
 
-
 function FollowupHistory({ leadId }: { leadId: string }) {
   const { data: followups = [], isLoading } = useFollowups(leadId)
   const markDone = useMarkFollowupDone(leadId)
@@ -411,9 +486,9 @@ function FollowupHistory({ leadId }: { leadId: string }) {
   }
 
   const statusLabels: Record<string, string> = {
-    pending: '⏰ Pending',
-    done:    '✅ Done',
-    missed:  '🔴 Missed',
+    pending: '░ Pending',
+    done:    '✓ Done',
+    missed:  '✗ Missed',
   }
 
   return (
@@ -431,7 +506,7 @@ function FollowupHistory({ leadId }: { leadId: string }) {
             }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color }}>
-                  {overdue ? '🔴 Overdue' : statusLabels[f.status]}
+                  {overdue ? '✗ Overdue' : statusLabels[f.status]}
                   <span style={{ fontWeight: 400, color: '#6b7280', marginLeft: 8 }}>
                     {fmtDateTime(f.follow_up_at)}
                   </span>
@@ -469,7 +544,6 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
   const router = useRouter()
   const { data: lead, isLoading, isError } = useLead(leadId)
 
-  // ── Loading skeleton ───────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -496,7 +570,6 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
     )
   }
 
-  // ── Error state ────────────────────────────────────────────────────────────
   if (isError || !lead) {
     return (
       <div style={{ padding: 40, textAlign: 'center' }}>
@@ -509,8 +582,6 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
     )
   }
 
-  // followupOverdue removed — follow-up section now handled by FollowupHistory component
-
   return (
     <div style={{ padding: '0 0 48px 0', display: 'flex', flexDirection: 'column', gap: 0 }}>
       <style>{`
@@ -522,7 +593,7 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
         }
       `}</style>
 
-      {/* ── Page header ─────────────────────────────────────────────────────── */}
+      {/* Page header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 14,
         padding: '20px 24px', borderBottom: '1px solid #f3f4f6',
@@ -555,7 +626,7 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
         </div>
 
         <div style={{ display: 'flex', gap: 8 }}>
-          <a href={`tel:${lead.mobile}`} style={actionChipStyle('call')}>☎ Call</a>
+          <a href={`tel:${lead.mobile}`} style={actionChipStyle('call')}>✆ Call</a>
           <a
             href={`https://wa.me/${lead.mobile.replace(/\D/g, '')}`}
             target="_blank" rel="noreferrer"
@@ -566,7 +637,7 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
         </div>
       </div>
 
-      {/* ── Two-column layout ────────────────────────────────────────────────── */}
+      {/* Two-column layout */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: 'minmax(0, 1fr) 340px',
@@ -575,18 +646,18 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
         alignItems: 'start',
       }}>
 
-        {/* ── LEFT COLUMN ─────────────────────────────────────────────────── */}
+        {/* LEFT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Lead Info */}
           <SectionCard title="Lead Information">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18 }}>
-              <InfoRow label="Source" value={sourceLabel(lead.source)} />
+              <InfoRow label="Source"       value={sourceLabel(lead.source)} />
               <InfoRow label="Interested In" value={lead.interested_in} />
-              <InfoRow label="Lead Value" value={lead.lead_value ? `₹${lead.lead_value.toLocaleString('en-IN')}` : null} />
-              <InfoRow label="Campaign" value={lead.campaign} />
-              <InfoRow label="City" value={lead.city} />
-              <InfoRow label="Created" value={fmtDate(lead.created_at)} />
+              <InfoRow label="Lead Value"   value={lead.lead_value ? `₹${lead.lead_value.toLocaleString('en-IN')}` : null} />
+              <InfoRow label="Campaign"     value={lead.campaign} />
+              <InfoRow label="City"         value={lead.city} />
+              <InfoRow label="Created"      value={fmtDate(lead.created_at)} />
               {lead.converted_at && (
                 <InfoRow label="Converted" value={fmtDate(lead.converted_at)} />
               )}
@@ -611,13 +682,16 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
           {/* Follow-up History */}
           <FollowupHistory leadId={leadId} />
 
+          {/* WhatsApp Conversation History */}
+          <WhatsAppHistory leadId={leadId} />
+
           {/* Activity Timeline */}
           <SectionCard title={`Activity Timeline (${lead.activities?.length ?? 0})`}>
             <ActivityTimeline activities={lead.activities ?? []} />
           </SectionCard>
         </div>
 
-        {/* ── RIGHT COLUMN ─────────────────────────────────────────────────── */}
+        {/* RIGHT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {/* Quick actions */}
@@ -652,7 +726,7 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
             </SectionCard>
           )}
 
-          {/* Metadata (debug — only shows if metadata has content) */}
+          {/* Metadata */}
           {lead.source === 'api' && lead.metadata && Object.keys(lead.metadata).length > 0 && (
             <SectionCard title="Source Metadata">
               <pre style={{

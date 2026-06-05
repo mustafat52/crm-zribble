@@ -7,6 +7,7 @@ use App\Modules\WhatsApp\Providers\WhatsAppProvider;
 use App\Modules\WhatsApp\Providers\MockWhatsAppProvider;
 use App\Modules\WhatsApp\Providers\MetaCloudProvider;
 use App\Modules\WhatsApp\Models\WhatsAppTemplate;
+use App\Modules\WhatsApp\Models\WhatsAppConversation;
 use App\Models\NotificationLog;
 use Illuminate\Support\Facades\Log;
 
@@ -15,17 +16,19 @@ class WhatsAppService
     /**
      * Send a WhatsApp template message to a phone number.
      *
-     * @param  Business  $business
-     * @param  string    $to           Phone number (any format — provider formats it)
-     * @param  string    $templateName Name matching whatsapp_templates.name
-     * @param  array     $variables    Ordered values for {{1}}, {{2}}, etc.
-     * @return array     ['message_id', 'status', 'error']
+     * @param  Business     $business
+     * @param  string       $to           Phone number (any format — provider formats it)
+     * @param  string       $templateName Name matching whatsapp_templates.name
+     * @param  array        $variables    Ordered values for {{1}}, {{2}}, etc.
+     * @param  string|null  $leadId       Optional lead UUID to link conversation to lead
+     * @return array        ['message_id', 'status', 'error']
      */
     public function sendTemplate(
         Business $business,
         string $to,
         string $templateName,
-        array $variables = []
+        array $variables = [],
+        ?string $leadId = null
     ): array {
         // 1. Look up template
         $template = WhatsAppTemplate::withoutGlobalScopes()
@@ -60,7 +63,10 @@ class WhatsAppService
             $variables
         );
 
-        // 4. Log to notification_logs
+        // 4. Log conversation
+        $this->logConversation($business, $to, $template, $result, null, $leadId);
+
+        // 5. Log to notification_logs
         $this->logNotification($business, $to, $templateName, $result);
 
         return $result;
@@ -73,10 +79,14 @@ class WhatsAppService
     public function sendText(
         Business $business,
         string $to,
-        string $message
+        string $message,
+        ?string $leadId = null
     ): array {
         $provider = $this->resolveProvider($business);
         $result   = $provider->sendText($to, $message);
+
+        // Log conversation
+        $this->logConversation($business, $to, null, $result, $message, $leadId);
 
         $this->logNotification($business, $to, 'text_message', $result);
 
@@ -97,6 +107,36 @@ class WhatsAppService
     }
 
     /**
+     * Write a row to whatsapp_conversations for every send attempt.
+     */
+    private function logConversation(
+        Business $business,
+        string $to,
+        ?WhatsAppTemplate $template,
+        array $result,
+        ?string $textBody = null,
+        ?string $leadId = null
+    ): void {
+        try {
+            WhatsAppConversation::create([
+                'business_id'   => $business->id,
+                'lead_id'       => $leadId,
+                'direction'     => 'outbound',
+                'message_id'    => $result['message_id'],
+                'template_name' => $template?->name,
+                'body'          => $textBody ?? $template?->body_text,
+                'status'        => $result['status'],
+                'recipient'     => $to,
+                'sent_at'       => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppService] Failed to write conversation log', [
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    /**
      * Write a row to notification_logs for every send attempt.
      */
     private function logNotification(
@@ -107,16 +147,16 @@ class WhatsAppService
     ): void {
         try {
             NotificationLog::create([
-                'business_id' => $business->id,
-                'lead_id'     => null,
-                'channel'     => 'whatsapp',
-                'recipient'   => $to,
-                'template'    => $templateName,
-                'payload'     => ['template' => $templateName],
-                'status'      => $result['status'],
+                'business_id'   => $business->id,
+                'lead_id'       => null,
+                'channel'       => 'whatsapp',
+                'recipient'     => $to,
+                'template'      => $templateName,
+                'payload'       => ['template' => $templateName],
+                'status'        => $result['status'],
                 'error_message' => $result['error'],
-                'attempts'    => 1,
-                'sent_at'     => now(),
+                'attempts'      => 1,
+                'sent_at'       => now(),
             ]);
         } catch (\Throwable $e) {
             Log::error('[WhatsAppService] Failed to write notification log', [

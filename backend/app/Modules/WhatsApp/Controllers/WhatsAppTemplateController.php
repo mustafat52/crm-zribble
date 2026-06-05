@@ -87,4 +87,27 @@ class WhatsAppTemplateController extends Controller
             'created_at'  => $t->created_at?->toDateTimeString(),
         ];
     }
+
+    public function conversations(string $leadId)
+    {
+        $conversations = \App\Modules\WhatsApp\Models\WhatsAppConversation::withoutGlobalScopes()
+            ->where('business_id', \Illuminate\Support\Facades\Auth::user()->business_id)
+            ->where('lead_id', $leadId)
+            ->orderBy('sent_at', 'asc')
+            ->get()
+            ->map(fn($c) => [
+                'id'            => $c->id,
+                'direction'     => $c->direction,
+                'message_id'    => $c->message_id,
+                'template_name' => $c->template_name,
+                'body'          => $c->body,
+                'status'        => $c->status,
+                'recipient'     => $c->recipient,
+                'sent_at'       => $c->sent_at?->toDateTimeString(),
+                'delivered_at'  => $c->delivered_at?->toDateTimeString(),
+                'read_at'       => $c->read_at?->toDateTimeString(),
+            ]);
+
+        return response()->json($conversations);
+    }
 }

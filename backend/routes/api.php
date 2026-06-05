@@ -129,6 +129,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('whatsapp/templates',        [WhatsAppTemplateController::class, 'store']);
     Route::put('whatsapp/templates/{id}',    [WhatsAppTemplateController::class, 'update']);
     Route::delete('whatsapp/templates/{id}', [WhatsAppTemplateController::class, 'destroy']);
+    Route::get('leads/{id}/whatsapp', [WhatsAppTemplateController::class, 'conversations']);
 
     // Agency panel
     Route::middleware('agency_access')->prefix('agency')->group(function () {
