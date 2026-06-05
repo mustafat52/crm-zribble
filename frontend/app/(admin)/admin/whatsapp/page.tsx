@@ -1,5 +1,22 @@
 'use client'
 
+interface WaVariable {
+  index: number
+  description: string
+  example: string
+}
+
+interface WaTemplate {
+  id: string
+  name: string
+  category: string
+  language: string
+  body_text: string
+  variables: WaVariable[]
+  template_id: string | null
+  is_active: boolean
+}
+
 import React from 'react'
 import { useAuthStore } from '@/store/useAuthStore'
 
@@ -12,7 +29,7 @@ const CATEGORY_COLOR: Record<string, string> = {
 export default function AdminWhatsAppPage() {
   const token = useAuthStore(s => s.token) ?? ''
 
-  const [templates, setTemplates] = React.useState<any[]>([])
+  const [templates, setTemplates] = React.useState<WaTemplate[]>([])
   const [loading,   setLoading]   = React.useState(true)
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const [editValue, setEditValue] = React.useState('')
@@ -162,7 +179,7 @@ export default function AdminWhatsAppPage() {
               {/* Variables */}
               {t.variables?.length > 0 && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
-                  {t.variables.map((v: any) => (
+                  {t.variables.map((v: WaVariable) => (
                     <span key={v.index} style={{
                       fontSize: 11, padding: '2px 8px', borderRadius: 20,
                       background: '#ede9fe', color: '#5b21b6',
