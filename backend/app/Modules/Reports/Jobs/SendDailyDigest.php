@@ -3,6 +3,8 @@
 namespace App\Modules\Reports\Jobs;
 
 use App\Mail\DailyDigestMail;
+use App\Models\Business;
+use App\Modules\WhatsApp\Services\WhatsAppService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -39,7 +41,7 @@ class SendDailyDigest implements ShouldQueue
         $owner = DB::table('users')
             ->where('business_id', $business->id)
             ->whereRaw('id::text IN (SELECT model_id FROM model_has_roles WHERE role_id IN (SELECT id FROM roles WHERE name = ?))', ['owner'])
-            ->select('id', 'name', 'email')
+            ->select('id', 'name', 'email', 'phone')
             ->first();
 
         if (!$owner || !$owner->email) {
@@ -105,7 +107,7 @@ class SendDailyDigest implements ShouldQueue
             ->limit(6)
             ->get()
             ->map(fn($r) => ['source' => $r->source, 'total' => (int) $r->total])
-            ->toArray();    
+            ->toArray();
 
         $byStatus = DB::table('leads')
             ->where('leads.business_id', $business->id)
@@ -117,6 +119,7 @@ class SendDailyDigest implements ShouldQueue
             ->map(fn($r) => ['status' => $r->status ?? 'Unassigned', 'total' => (int) $r->total])
             ->toArray();
 
+        // 1. Send email digest
         Mail::to($owner->email)->send(new DailyDigestMail(
             businessName:     $business->name,
             ownerName:        $owner->name,
@@ -133,6 +136,33 @@ class SendDailyDigest implements ShouldQueue
             byBranch:         $byBranch,
         ));
 
-        Log::info('DailyDigest sent to ' . $owner->email . ' for business ' . $business->name);
+        Log::info('DailyDigest email sent to ' . $owner->email . ' for business ' . $business->name);
+
+        // 2. Send WhatsApp digest to owner (if phone set + template approved)
+        if ($owner->phone) {
+            try {
+                $businessModel = Business::find($business->id);
+                if ($businessModel) {
+                    $waService = new WhatsAppService();
+                    $waService->sendTemplate(
+                        $businessModel,
+                        $owner->phone,
+                        'daily_digest',
+                        [
+                            $business->name,
+                            (string) $totalToday,
+                            (string) $totalWeek,
+                            (string) $overdueFollowups,
+                            (string) $conversionRate,
+                        ]
+                    );
+                    Log::info('DailyDigest WhatsApp sent to ' . $owner->phone . ' for business ' . $business->name);
+                }
+            } catch (\Throwable $e) {
+                Log::error('DailyDigest WhatsApp failed for business ' . $business->id, [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
     }
 }
