@@ -3,8 +3,10 @@
 namespace App\Modules\Notifications\Jobs;
 
 use App\Models\AutomationLog;
+use App\Models\Business;
 use App\Modules\Automations\Services\AutomationService;
 use App\Modules\Notifications\Models\InAppNotification;
+use App\Modules\WhatsApp\Services\WhatsAppService;
 use App\Mail\LeadCreatedMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,9 +30,10 @@ class SendFollowUpReminders implements ShouldQueue
      * Runs every 15 minutes via Laravel Scheduler.
      *
      * For each due follow-up:
-     *  1. Sends in-app notification to salesperson (existing T30)
-     *  2. Sends reminder email to salesperson (existing T30)
-     *  3. [NEW T41] Sends courtesy email to customer if lead has email
+     *  1. Sends in-app notification to salesperson
+     *  2. Sends reminder email to salesperson
+     *  3. Sends WhatsApp reminder to salesperson (TWA5-D)
+     *  4. Sends courtesy email to customer if lead has email (T41)
      */
     public function handle(): void
     {
@@ -56,12 +59,13 @@ class SendFollowUpReminders implements ShouldQueue
                 'businesses.name as business_name',
                 'users.email as assigned_email',
                 'users.name as assigned_name',
+                'users.phone as assigned_phone',
             ])
             ->get();
 
         foreach ($dueFollowups as $followup) {
             try {
-                // ── Existing T30: Salesperson in-app + email reminder ──
+                // ── 1 + 2: Salesperson in-app + email reminder ────────────
                 $recipientEmail = $followup->assigned_email
                     ?? $this->getOwnerEmail($followup->business_id);
 
@@ -85,7 +89,38 @@ class SendFollowUpReminders implements ShouldQueue
                     ));
                 }
 
-                // ── NEW T41: Customer courtesy email ──
+                // ── 3: WhatsApp reminder to salesperson (TWA5-D) ─────────
+                $recipientPhone = $followup->assigned_phone
+                    ?? $this->getOwnerPhone($followup->business_id);
+
+                if ($recipientPhone) {
+                    try {
+                        $businessModel = Business::find($followup->business_id);
+                        if ($businessModel) {
+                            $waService = new WhatsAppService();
+                            $waService->sendTemplate(
+                                $businessModel,
+                                $recipientPhone,
+                                'followup_reminder',
+                                [
+                                    $followup->lead_name,
+                                    $followup->lead_mobile,
+                                    \Carbon\Carbon::parse($followup->follow_up_at)
+                                        ->setTimezone($businessModel->timezone ?? 'Asia/Kolkata')
+                                        ->format('g:i A, d M'),
+                                ],
+                                $followup->lead_id
+                            );
+                        }
+                    } catch (\Throwable $e) {
+                        Log::error('[SendFollowUpReminders] WhatsApp reminder failed', [
+                            'followup_id' => $followup->followup_id,
+                            'error'       => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                // ── 4: Customer courtesy email (T41) ─────────────────────
                 if (!empty($followup->lead_email)) {
                     $automationService = app(AutomationService::class);
                     $automationService->sendFollowUpCustomerEmail(
@@ -131,6 +166,27 @@ class SendFollowUpReminders implements ShouldQueue
             ->whereIn('id', $ownerIds)
             ->where('is_active', true)
             ->value('email');
+    }
+
+    private function getOwnerPhone(string $businessId): ?string
+    {
+        $ownerRoleId = DB::table('roles')
+            ->where('name', 'owner')
+            ->where('guard_name', 'sanctum')
+            ->value('id');
+
+        if (!$ownerRoleId) return null;
+
+        $ownerIds = DB::table('model_has_roles')
+            ->where('role_id', $ownerRoleId)
+            ->where('model_type', 'App\\Models\\User')
+            ->pluck('model_id');
+
+        return DB::table('users')
+            ->where('business_id', $businessId)
+            ->whereIn('id', $ownerIds)
+            ->where('is_active', true)
+            ->value('phone');
     }
 
     private function getOwnerId(string $businessId): ?string
