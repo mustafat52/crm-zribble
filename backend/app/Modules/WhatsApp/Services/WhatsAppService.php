@@ -10,6 +10,7 @@ use App\Modules\WhatsApp\Models\WhatsAppTemplate;
 use App\Modules\WhatsApp\Models\WhatsAppConversation;
 use App\Models\NotificationLog;
 use Illuminate\Support\Facades\Log;
+use App\Modules\Leads\Models\Lead;
 
 class WhatsAppService
 {
@@ -91,6 +92,63 @@ class WhatsAppService
         $this->logNotification($business, $to, 'text_message', $result);
 
         return $result;
+    }
+
+    /**
+     * Notify all managers in a business about a new lead.
+     * Used when a lead is created — fires alongside owner notification.
+     */
+    public function notifyAllManagers(Business $business, Lead $lead): void
+    {
+        try {
+            // Find all users with manager role in this business
+            $managerRoleId = \DB::table('roles')
+                ->where('name', 'manager')
+                ->where('guard_name', 'sanctum')
+                ->value('id');
+
+            if (!$managerRoleId) return;
+
+            $managers = \App\Models\User::whereRaw(
+                "id::text IN (SELECT model_id FROM model_has_roles WHERE role_id = ?)",
+                [$managerRoleId]
+            )
+            ->where('business_id', $business->id)
+            ->where('is_active', true)
+            ->whereNotNull('phone')
+            ->get();
+
+            if ($managers->isEmpty()) return;
+
+            foreach ($managers as $manager) {
+                try {
+                    $this->sendTemplate(
+                        $business,
+                        $manager->phone,
+                        'new_lead_alert',
+                        [
+                            $lead->name,
+                            $lead->mobile,
+                            $lead->source ?? 'manual',
+                        ],
+                        $lead->id
+                    );
+                } catch (\Throwable $e) {
+                    Log::error('[WhatsAppService] Failed to notify manager', [
+                        'manager_id' => $manager->id,
+                        'lead_id'    => $lead->id,
+                        'error'      => $e->getMessage(),
+                    ]);
+                }
+            }
+
+        } catch (\Throwable $e) {
+            Log::error('[WhatsAppService] notifyAllManagers failed', [
+                'business_id' => $business->id,
+                'lead_id'     => $lead->id,
+                'error'       => $e->getMessage(),
+            ]);
+        }
     }
 
     /**

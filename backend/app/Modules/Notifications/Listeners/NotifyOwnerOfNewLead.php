@@ -1,11 +1,11 @@
 <?php
-
 namespace App\Modules\Notifications\Listeners;
-
 use App\Mail\LeadCreatedMail;
 use App\Modules\Leads\Events\LeadCreated;
 use App\Modules\Notifications\Models\InAppNotification;
+use App\Modules\WhatsApp\Services\WhatsAppService;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 
 class NotifyOwnerOfNewLead
 {
@@ -39,7 +39,7 @@ class NotifyOwnerOfNewLead
             $assignedName = $assignedUser?->name;
         }
 
-        // 1. Send email
+        // 1. Send email to owner
         Mail::to($owner->email)->send(new LeadCreatedMail(
             leadName:     $lead->name,
             leadMobile:   $lead->mobile,
@@ -74,6 +74,59 @@ class NotifyOwnerOfNewLead
                 'is_read'     => false,
                 'created_at'  => now(),
             ]);
+        }
+
+        // 4. Send WhatsApp to owner (if they have a phone number)
+        if ($owner->phone) {
+            try {
+                $waService = new WhatsAppService();
+                $waService->sendTemplate(
+                    $business,
+                    $owner->phone,
+                    'new_lead_alert',
+                    [
+                        $lead->name,
+                        $lead->mobile,
+                        $lead->source ?? 'manual',
+                    ],
+                    $lead->id
+                );
+            } catch (\Throwable $e) {
+                Log::error('[NotifyOwnerOfNewLead] WhatsApp to owner failed', [
+                    'error'   => $e->getMessage(),
+                    'lead_id' => $lead->id,
+                ]);
+            }
+        }
+
+        // 5. Send WhatsApp to all managers in the business
+        try {
+            $waService = new WhatsAppService();
+            $waService->notifyAllManagers($business, $lead);
+        } catch (\Throwable $e) {
+            Log::error('[NotifyOwnerOfNewLead] notifyAllManagers failed', [
+                'error'   => $e->getMessage(),
+                'lead_id' => $lead->id,
+            ]);
+        }
+
+        // 6. Send WhatsApp acknowledgement to customer
+        if ($lead->mobile) {
+            try {
+                $waService = new WhatsAppService();
+                $waService->sendTemplate(
+                    $business,
+                    $lead->mobile,
+                    'lead_acknowledgement',
+                    [$lead->name],
+                    $lead->id
+                );
+            } catch (\Throwable $e) {
+                Log::error('[NotifyOwnerOfNewLead] WhatsApp acknowledgement to customer failed', [
+                    'error'   => $e->getMessage(),
+                    'lead_id' => $lead->id,
+                ]);
+            }
         }
     }
 }
