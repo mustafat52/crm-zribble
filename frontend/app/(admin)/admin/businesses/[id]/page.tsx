@@ -29,10 +29,10 @@ export default function BusinessDetailPage() {
 
       {/* Back */}
       <button
-        onClick={() => router.push('/admin/overview')}
+        onClick={() => router.push('/admin/businesses')}
         style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: 13, fontWeight: 600, padding: 0, marginBottom: 16 }}
       >
-        ← Back to Overview
+        ← Back
       </button>
 
       {/* Header */}
