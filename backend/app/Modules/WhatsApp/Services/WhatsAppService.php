@@ -11,6 +11,7 @@ use App\Modules\WhatsApp\Models\WhatsAppConversation;
 use App\Models\NotificationLog;
 use Illuminate\Support\Facades\Log;
 use App\Modules\Leads\Models\Lead;
+use App\Modules\WhatsApp\Providers\WhatsJetProvider;
 
 class WhatsAppService
 {
@@ -159,8 +160,9 @@ class WhatsAppService
     public function resolveProvider(Business $business): WhatsAppProvider
     {
         return match($business->whatsapp_provider) {
-            'meta'  => new MetaCloudProvider(),
-            default => new MockWhatsAppProvider(),
+            'meta'     => new MetaCloudProvider(),
+            'whatsjet' => new WhatsJetProvider(),
+            default    => new MockWhatsAppProvider(),
         };
     }
 
