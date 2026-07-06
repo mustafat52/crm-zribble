@@ -77,6 +77,9 @@ class NotifyOwnerOfNewLead
         }
 
         // 4. Send WhatsApp to owner (if they have a phone number)
+        // owner_lead_new template expects 7 variables:
+        // {{1}} owner name, {{2}} business name, {{3}} customer name,
+        // {{4}} customer number, {{5}} request type, {{6}} source, {{7}} lead ID
         if ($owner->phone) {
             try {
                 $waService = new WhatsAppService();
@@ -85,9 +88,13 @@ class NotifyOwnerOfNewLead
                     $owner->phone,
                     'new_lead_alert',
                     [
-                        $lead->name,
-                        $lead->mobile,
-                        $lead->source ?? 'manual',
+                        $owner->name,                   // {{1}} greeting — owner's name
+                        $business->name,                // {{2}} business name
+                        $lead->name,                    // {{3}} customer name
+                        $lead->mobile,                  // {{4}} customer number
+                        $lead->interested_in ?? 'N/A',  // {{5}} request type
+                        $lead->source ?? 'manual',      // {{6}} source
+                        $lead->id,                      // {{7}} lead ID for URL
                     ],
                     $lead->id
                 );
@@ -111,6 +118,8 @@ class NotifyOwnerOfNewLead
         }
 
         // 6. Send WhatsApp acknowledgement to customer
+        // lead_message_customer_24102025 template expects 3 variables:
+        // {{1}} business name, {{2}} address, {{3}} contact number
         if ($lead->mobile) {
             try {
                 $waService = new WhatsAppService();
@@ -118,7 +127,11 @@ class NotifyOwnerOfNewLead
                     $business,
                     $lead->mobile,
                     'lead_acknowledgement',
-                    [$lead->name],
+                    [
+                        $business->name,                               // {{1}} business name
+                        $business->settings['address'] ?? 'N/A',      // {{2}} address
+                        $business->whatsapp_number ?? $owner->phone,   // {{3}} contact number
+                    ],
                     $lead->id
                 );
             } catch (\Throwable $e) {
