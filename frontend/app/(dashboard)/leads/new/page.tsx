@@ -1,11 +1,13 @@
 'use client'
 
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 
 export default function NewLeadPage() {
   const router = useRouter()
+  const qc = useQueryClient()
   const [form, setForm] = useState({ name: '', mobile: '', email: '', source: 'manual', city: '', interested_in: '' })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -15,6 +17,10 @@ export default function NewLeadPage() {
     setLoading(true); setError('')
     try {
       await api.post('/leads', form)
+      await qc.invalidateQueries({ queryKey: ['leads'] })
+      await qc.invalidateQueries({ queryKey: ['dashboard-stats'] })
+      await qc.invalidateQueries({ queryKey: ['action-queue'] })
+      await qc.invalidateQueries({ queryKey: ['recent-activity'] })
       router.push('/leads')
     } catch (e: unknown) {
       const error = e as Error
