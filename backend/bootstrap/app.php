@@ -20,11 +20,18 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->redirectGuestsTo(fn () => null);
         $middleware->alias([
-            'auth'         => \App\Http\Middleware\Authenticate::class,
-            'auth.sanctum' => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
-            'api_key'      => \App\Http\Middleware\ApiKeyMiddleware::class,
+            'auth'          => \App\Http\Middleware\Authenticate::class,
+            'auth.sanctum'  => \Laravel\Sanctum\Http\Middleware\CheckAbilities::class,
+            'api_key'       => \App\Http\Middleware\ApiKeyMiddleware::class,
             'agency_admin'  => \App\Http\Middleware\EnsureAgencyAdmin::class,
             'agency_access' => \App\Http\Middleware\EnsureAgencyAccess::class,
+            // T61 FIX: Register Spatie role/permission middleware aliases.
+            // Without these, Route::middleware('role:owner|manager|executive')
+            // throws BindingResolutionException — Laravel tries to resolve
+            // 'role' as a class and fails. Spatie v6 uses singular 'Middleware'.
+            'role'              => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'permission'        => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'role_or_permission'=> \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
