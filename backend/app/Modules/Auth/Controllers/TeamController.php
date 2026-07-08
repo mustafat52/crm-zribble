@@ -15,7 +15,6 @@ class TeamController extends Controller
     /**
      * GET /api/v1/team
      * Returns all users in this business.
-     * Already existed — unchanged.
      */
     public function index(): JsonResponse
     {
@@ -32,7 +31,6 @@ class TeamController extends Controller
      * POST /api/v1/team/invite
      * Creates a new user under this business with a generated temp password.
      * Returns the temp password ONCE in the response — owner shares it manually.
-     * Phase 1: no email sending. That ships in T32.
      */
     public function invite(Request $request): JsonResponse
     {
@@ -46,16 +44,21 @@ class TeamController extends Controller
             'name'      => 'required|string|max:255',
             'email'     => 'required|email|unique:users,email',
             'role'      => 'required|in:manager,executive,read-only',
-            'branch_id' => 'required|uuid',
+            // T64 FIX: Make branch_id optional.
+            // The original 'required|uuid' blocked the very first invite on any
+            // new business that hasn't created branches yet — a chicken-and-egg problem.
+            'branch_id' => 'nullable|uuid',
         ]);
 
-        // Verify branch belongs to this business
-        $branchExists = \App\Models\Branch::where('id', $data['branch_id'])
-            ->where('business_id', $user->business_id)
-            ->exists();
+        // Only validate branch ownership when a branch_id is actually provided
+        if (!empty($data['branch_id'])) {
+            $branchExists = \App\Models\Branch::where('id', $data['branch_id'])
+                ->where('business_id', $user->business_id)
+                ->exists();
 
-        if (! $branchExists) {
-            return response()->json(['message' => 'Branch not found.'], 404);
+            if (! $branchExists) {
+                return response()->json(['message' => 'Branch not found.'], 404);
+            }
         }
 
         // Generate a simple temp password: 3 words + 4 digits
@@ -66,7 +69,7 @@ class TeamController extends Controller
             'email'       => $data['email'],
             'password'    => bcrypt($tempPassword),
             'business_id' => $user->business_id,
-            'branch_id'   => $data['branch_id'],
+            'branch_id'   => $data['branch_id'] ?? null,
             'is_active'   => true,
         ]);
 
