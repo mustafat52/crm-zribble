@@ -5,6 +5,7 @@ namespace App\Modules\Reports\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\Reports\Jobs\ExportLeadsJob;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -18,11 +19,14 @@ class ExportController extends Controller
         $exportId = Str::uuid()->toString();
         $user     = $request->user();
 
-        // Mark as queued immediately
+        // T54 FIX: Store business_id in the cache entry so download() can verify
+        // ownership. This prevents one authenticated user from downloading another
+        // business's export by guessing a UUID.
         Cache::put("export:{$exportId}", [
-            'status' => 'queued',
-            'url'    => null,
-            'error'  => null,
+            'status'      => 'queued',
+            'business_id' => $user->business_id,
+            'url'         => null,
+            'error'       => null,
         ], now()->addHours(2));
 
         ExportLeadsJob::dispatch(
@@ -56,13 +60,19 @@ class ExportController extends Controller
     }
 
     // GET /api/v1/reports/exports/{exportId}/download
-    // Returns the actual file
+    // Returns the actual file — now inside auth:sanctum (see routes/api.php)
     public function download(string $exportId): BinaryFileResponse|\Illuminate\Http\JsonResponse
     {
         $data = Cache::get("export:{$exportId}");
 
         if (!$data || $data['status'] !== 'ready') {
             return response()->json(['error' => 'Export not ready'], 404);
+        }
+
+        // T54 FIX: Verify the authenticated user's business matches the export.
+        // Prevents cross-tenant file access when the route is behind auth:sanctum.
+        if (($data['business_id'] ?? null) !== Auth::user()->business_id) {
+            return response()->json(['error' => 'Not found.'], 404);
         }
 
         $path = storage_path("app/exports/leads-{$exportId}.xlsx");

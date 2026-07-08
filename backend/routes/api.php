@@ -123,6 +123,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Exports
     Route::post('reports/exports',                  [\App\Modules\Reports\Controllers\ExportController::class, 'start']);
     Route::get('reports/exports/{exportId}/status', [\App\Modules\Reports\Controllers\ExportController::class, 'status']);
+    Route::get('reports/exports/{exportId}/download', [\App\Modules\Reports\Controllers\ExportController::class, 'download']);
 
     // WhatsApp Templates
     Route::get('whatsapp/templates',         [WhatsAppTemplateController::class, 'index']);
@@ -144,6 +145,3 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
 });
-
-// Export download — public (exportId UUID is the secret)
-Route::get('/reports/exports/{exportId}/download', [ExportController::class, 'download']);
