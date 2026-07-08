@@ -4,6 +4,7 @@ namespace App\Modules\Auth\Controllers;
 
 use Illuminate\Routing\Controller;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\Rule;
 use App\Modules\Auth\Models\Branch;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -32,14 +33,21 @@ class BranchController extends Controller
     {
         $this->authorize('create', Branch::class);
 
+        $user = Auth::user();
+
         $validated = $request->validate([
             'name'            => 'required|string|max:100',
             'city'            => 'nullable|string|max:100',
             'whatsapp_number' => 'nullable|string|max:20',
-            'manager_id'      => 'nullable|uuid|exists:users,id',
+            // T63 FIX: Scope manager_id validation to the current business.
+            // The original 'exists:users,id' rule accepted any user in the system,
+            // allowing a branch to be assigned a manager from a different business.
+            'manager_id'      => [
+                'nullable',
+                'uuid',
+                Rule::exists('users', 'id')->where('business_id', $user->business_id),
+            ],
         ]);
-
-        $user = Auth::user();
 
         $branch = Branch::create([
             ...$validated,
@@ -60,11 +68,18 @@ class BranchController extends Controller
         $branch = $this->findForUser($id);
         $this->authorize('update', $branch);
 
+        $user = Auth::user();
+
         $validated = $request->validate([
             'name'            => 'sometimes|required|string|max:100',
             'city'            => 'nullable|string|max:100',
             'whatsapp_number' => 'nullable|string|max:20',
-            'manager_id'      => 'nullable|uuid|exists:users,id',
+            // T63 FIX: Same scoped validation in update() to prevent cross-business manager assignment.
+            'manager_id'      => [
+                'nullable',
+                'uuid',
+                Rule::exists('users', 'id')->where('business_id', $user->business_id),
+            ],
         ]);
 
         $branch->update($validated);
