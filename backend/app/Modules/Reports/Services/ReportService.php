@@ -18,7 +18,6 @@ class ReportService
         $user       = Auth::user();
         $businessId = $user->business_id;
         $branchId   = $filters['branch_id'] ?? null;
-
         $cacheKey = "dashboard_stats:{$businessId}" . ($branchId ? ":{$branchId}" : '');
 
         return Cache::remember($cacheKey, 300, function () use ($businessId, $branchId, $user) {
