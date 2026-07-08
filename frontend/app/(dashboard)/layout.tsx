@@ -6,12 +6,13 @@ import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import NotificationBell from '@/components/modules/notifications/NotificationBell'
+import { api } from '@/lib/api'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
   const isHydrated      = useAuthStore((s) => s._hasHydrated)
-  const { permission, subscribe } = usePushNotifications() 
+  const { permission, subscribe } = usePushNotifications()
 
   useEffect(() => {
     if (isHydrated && !isAuthenticated) router.replace('/login')
@@ -67,9 +68,22 @@ const NAV = [
 ]
 
 function Sidebar() {
+  const router    = useRouter()
   const user      = useAuthStore((s) => s.user)
   const clearAuth = useAuthStore((s) => s.clearAuth)
   const pathname  = usePathname()
+
+  // T59 FIX: Call server logout endpoint before clearing local state.
+  // The Sanctum token remains valid on the server for 24h without this call.
+  async function handleLogout() {
+    try {
+      await api.post('/auth/logout', {})
+    } catch {
+      // Proceed with local logout even if the server call fails
+    }
+    clearAuth()
+    router.replace('/login')
+  }
 
   return (
     <nav style={{
@@ -138,8 +152,7 @@ function Sidebar() {
         {NAV.map((item) => {
           const active = pathname?.startsWith(item.href)
           return (
-            
-              <a key={item.href}
+            <a key={item.href}
               href={item.href}
               style={{
                 display: 'flex',
@@ -168,8 +181,8 @@ function Sidebar() {
             </a>
           )
         })}
-      </div>  
-      
+      </div>
+
       {/* User footer */}
       <div style={{
         padding: '12px 16px',
@@ -208,7 +221,7 @@ function Sidebar() {
         </div>
 
         <button
-          onClick={clearAuth}
+          onClick={handleLogout}
           title="Sign out"
           style={{
             background: 'none', border: 'none',
@@ -329,5 +342,3 @@ function DashboardIcon({ active }: { active?: boolean }) {
     </svg>
   )
 }
-
-  

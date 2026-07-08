@@ -1,8 +1,10 @@
 'use client'
+// app/(admin)/layout.tsx
 
 import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
+import { api } from '@/lib/api'
 
 const NAV = [
   { label: 'Overview',   href: '/admin/overview' },
@@ -22,12 +24,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!hydrated) return
     if (!isAuth) { router.replace('/login'); return }
     const isAgencyUser =
-    user?.roles?.includes('agency_admin') ||
-    user?.roles?.includes('agency_staff')
+      user?.roles?.includes('agency_admin') ||
+      user?.roles?.includes('agency_staff')
     if (!isAgencyUser) router.replace('/dashboard')
   }, [hydrated, isAuth, user, router])
 
   if (!hydrated || !isAuth) return null
+
+  // T59 FIX: Call server logout endpoint before clearing local state.
+  async function handleLogout() {
+    try {
+      await api.post('/auth/logout', {})
+    } catch {
+      // Proceed with local logout even if the server call fails
+    }
+    clearAuth()
+    router.replace('/login')
+  }
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg2)' }}>
@@ -123,13 +136,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--sidebar-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {user?.name ?? 'Admin'}
               </p>
+              {/* T25 FIX (preview): Read role from auth store instead of hardcoding "agency_admin" */}
               <p style={{ fontSize: 11, color: 'var(--sidebar-text2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                agency_admin
+                {user?.roles?.[0] ?? 'agency'}
               </p>
             </div>
           </div>
           <button
-            onClick={() => { clearAuth(); router.replace('/login') }}
+            onClick={handleLogout}
             title="Sign out"
             style={{ background: 'none', border: 'none', color: 'var(--sidebar-text2)', cursor: 'pointer', padding: '4px', borderRadius: 5, flexShrink: 0, transition: 'color var(--transition)' }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = 'var(--sidebar-text)'}
