@@ -51,7 +51,11 @@ class CustomFieldController extends Controller
 
     public function update(Request $request, string $id): JsonResponse
     {
-        $field = CustomFieldDefinition::findOrFail($id);
+        // T56 FIX: Scope to authenticated business before updating.
+        // Without this, any authenticated user can update another business's custom fields.
+        $field = CustomFieldDefinition::where('id', $id)
+            ->where('business_id', $request->user()->business_id)
+            ->firstOrFail();
 
         $validated = $request->validate([
             'label'       => 'sometimes|string|max:100',
@@ -69,7 +73,11 @@ class CustomFieldController extends Controller
 
     public function destroy(string $id): JsonResponse
     {
-        $field = CustomFieldDefinition::findOrFail($id);
+        // T56 FIX: Scope to authenticated business before deactivating.
+        $field = CustomFieldDefinition::where('id', $id)
+            ->where('business_id', request()->user()->business_id)
+            ->firstOrFail();
+
         $field->update(['is_active' => false]);
 
         return response()->json(['message' => 'Field deactivated successfully.']);
