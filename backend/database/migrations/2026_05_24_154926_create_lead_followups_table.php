@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('lead_followups', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(DB::raw('gen_random_uuid()'));
+            $table->uuid('id')->primary();
             $table->uuid('business_id');
             $table->uuid('lead_id');
             $table->uuid('assigned_to')->nullable();  // who needs to follow up
