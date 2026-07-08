@@ -15,30 +15,20 @@ class AutomationService
      * Run the stale lead nudge automation for ALL active businesses.
      *
      * Called by SendStaleLeadNudges job (daily cron at 9 AM).
-     *
-     * Logic:
-     *  - For each business, read settings.stale_lead_days (default 3).
-     *  - Find leads where last_contacted_at < now - stale_lead_days
-     *    AND status is not terminal/converted/lost.
-     *  - Skip leads that were already nudged in the last 24 hours
-     *    (checked via automation_logs) to prevent spam on re-runs.
-     *  - Email the assigned salesperson (or owner as fallback).
      */
     public function runStaleLeadNudges(): void
     {
         $appUrl = rtrim(config('app.url'), '/');
 
-        // Fetch all active businesses with their settings and owner emails
         $businesses = DB::table('businesses')
             ->where('is_active', true)
             ->get(['id', 'name', 'settings']);
 
         foreach ($businesses as $business) {
             try {
-                $settings    = json_decode($business->settings ?? '{}', true) ?? [];
-                $staleDays   = (int) ($settings['stale_lead_days'] ?? 3);
+                $settings  = json_decode($business->settings ?? '{}', true) ?? [];
+                $staleDays = (int) ($settings['stale_lead_days'] ?? 3);
 
-                // stale_lead_days = 0 means automation is disabled for this business
                 if ($staleDays <= 0) {
                     continue;
                 }
@@ -67,7 +57,6 @@ class AutomationService
         int    $staleDays,
         string $appUrl,
     ): void {
-        // Get terminal/converted/lost status IDs for this business
         $excludedStatusIds = DB::table('lead_statuses')
             ->where('business_id', $businessId)
             ->where(function ($q) {
@@ -80,13 +69,14 @@ class AutomationService
 
         $cutoff = now()->subDays($staleDays)->toDateTimeString();
 
-        // Find stale leads: last_contacted_at older than cutoff (or never contacted
-        // and created_at older than cutoff), not in a terminal status
+        // T89 FIX: Add ORDER BY so the most-neglected leads (oldest last_contacted_at)
+        // are prioritised. Without ORDER BY the database returns rows in an unspecified
+        // but consistent order — the same 100 leads are processed every day while leads
+        // beyond position 100 are never nudged regardless of how stale they become.
         $staleLeads = DB::table('leads')
             ->leftJoin('users', 'users.id', '=', 'leads.assigned_to')
             ->where('leads.business_id', $businessId)
             ->where(function ($q) use ($cutoff) {
-                // Either contacted before the cutoff, or never contacted and old enough
                 $q->where('leads.last_contacted_at', '<', $cutoff)
                   ->orWhere(function ($q2) use ($cutoff) {
                       $q2->whereNull('leads.last_contacted_at')
@@ -107,33 +97,30 @@ class AutomationService
                 'users.email as assigned_email',
                 'users.name as assigned_name',
             ])
-            ->limit(100) // safety cap per run per business
+            ->orderByRaw('COALESCE(leads.last_contacted_at, leads.created_at) ASC')
+            ->limit(100)
             ->get();
 
         if ($staleLeads->isEmpty()) {
             return;
         }
 
-        // Collect lead IDs already nudged in the past 24 hours to avoid re-spam
         $recentlyNudged = DB::table('automation_logs')
             ->where('business_id', $businessId)
             ->where('automation_type', 'stale_lead_nudge')
             ->where('status', 'sent')
             ->where('created_at', '>=', now()->subHours(24)->toDateTimeString())
             ->pluck('lead_id')
-            ->flip() // convert to keyed map for fast O(1) lookup
+            ->flip()
             ->toArray();
 
-        // Get the business owner email as fallback
         $ownerEmail = $this->getOwnerEmail($businessId);
 
         foreach ($staleLeads as $lead) {
-            // Skip if already nudged recently
             if (isset($recentlyNudged[$lead->id])) {
                 continue;
             }
 
-            // Determine recipient: assigned salesperson → owner fallback
             $recipientEmail = $lead->assigned_email ?? $ownerEmail;
 
             if (!$recipientEmail) {
@@ -143,7 +130,6 @@ class AutomationService
                 continue;
             }
 
-            // Compute days since last activity
             $lastActivity = $lead->last_contacted_at ?? $lead->created_at;
             $daysSince    = (int) now()->diffInDays($lastActivity);
 
@@ -192,9 +178,9 @@ class AutomationService
             ]);
         } catch (\Throwable $e) {
             Log::error('[AutomationService] Failed to send stale nudge email', [
-                'lead_id'    => $lead->id,
-                'recipient'  => $recipientEmail,
-                'error'      => $e->getMessage(),
+                'lead_id'   => $lead->id,
+                'recipient' => $recipientEmail,
+                'error'     => $e->getMessage(),
             ]);
 
             AutomationLog::create([
@@ -214,11 +200,7 @@ class AutomationService
     /**
      * Send the follow-up notification email to a CUSTOMER.
      *
-     * Called from SendFollowUpReminders job after the salesperson reminder fires.
-     * Only sends if:
-     *  - The lead has an email address
-     *  - The business has not already sent this customer a follow-up email
-     *    for this specific follow-up row (checked by followup_id in metadata)
+     * Called from SendFollowUpReminders job.
      */
     public function sendFollowUpCustomerEmail(
         string  $followupId,
@@ -229,12 +211,15 @@ class AutomationService
         ?string $note,
         string  $appUrl,
     ): void {
-        // Idempotency: skip if already sent for this followup row
+        // T68 FIX: Replace PostgreSQL-only `metadata->>'followup_id'` JSON operator
+        // with JSON_UNQUOTE(JSON_EXTRACT(...)) which works on MySQL 5.7.9+.
+        // The original operator caused a syntax error on MySQL, breaking the idempotency
+        // check entirely — every follow-up would send duplicate customer emails.
         $alreadySent = DB::table('automation_logs')
             ->where('business_id', $businessId)
             ->where('automation_type', 'followup_customer_email')
             ->where('status', 'sent')
-            ->whereRaw("metadata->>'followup_id' = ?", [$followupId])
+            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.followup_id')) = ?", [$followupId])
             ->exists();
 
         if ($alreadySent) {
@@ -278,7 +263,7 @@ class AutomationService
 
     /**
      * Get the owner email for a business.
-     * Uses the same UUID-safe pattern established in NotifyOwnerOfNewLead.
+     * Uses the same UUID-safe pattern established throughout the codebase.
      */
     private function getOwnerEmail(string $businessId): ?string
     {
