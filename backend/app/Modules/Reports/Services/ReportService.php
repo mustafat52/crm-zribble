@@ -19,7 +19,6 @@ class ReportService
         $businessId = $user->business_id;
         $branchId   = $filters['branch_id'] ?? null;
 
-        // Cache key includes branch filter so different branches get their own cache
         $cacheKey = "dashboard_stats:{$businessId}" . ($branchId ? ":{$branchId}" : '');
 
         return Cache::remember($cacheKey, 300, function () use ($businessId, $branchId, $user) {
@@ -32,7 +31,6 @@ class ReportService
         $now   = Carbon::now();
         $base  = DB::table('leads')->where('leads.business_id', $businessId)->whereNull('leads.deleted_at');
 
-        // Branch filter: non-owners always see only their branch
         if ($user->branch_id) {
             $branchId = $user->branch_id;
         }
@@ -40,12 +38,10 @@ class ReportService
             $base = $base->where('leads.branch_id', $branchId);
         }
 
-        // ── Totals ──
         $total        = (clone $base)->count();
         $thisMonth    = (clone $base)->whereMonth('leads.created_at', $now->month)->whereYear('leads.created_at', $now->year)->count();
         $today        = (clone $base)->whereDate('leads.created_at', $now->toDateString())->count();
 
-        // ── Conversion ──
         $convertedIds = DB::table('lead_statuses')
             ->where('business_id', $businessId)
             ->where('is_converted', true)
@@ -53,7 +49,6 @@ class ReportService
         $converted    = (clone $base)->whereIn('leads.lead_status_id', $convertedIds)->count();
         $conversionRate = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
 
-        // ── Active Leads (not terminal, not converted, not lost) ──
         $terminalIds  = DB::table('lead_statuses')
             ->where('business_id', $businessId)
             ->where(function ($q) {
@@ -64,7 +59,6 @@ class ReportService
             ->pluck('id');
         $activeLeads  = (clone $base)->whereNotIn('leads.lead_status_id', $terminalIds)->count();
 
-        // ── Overdue Follow-Ups ──
         $overdueFollowups = DB::table('lead_followups')
             ->where('business_id', $businessId)
             ->where('status', 'pending')
@@ -74,7 +68,6 @@ class ReportService
             ))
             ->count();
 
-        // ── Follow-ups due today ──
         $followupsDueToday = DB::table('lead_followups')
             ->where('business_id', $businessId)
             ->where('status', 'pending')
@@ -85,14 +78,11 @@ class ReportService
             ))
             ->count();
 
-        // ── Unassigned leads ──
         $unassigned = (clone $base)->whereNull('leads.assigned_to')->count();
 
-        // ── Contact Rate (leads that have at least one activity) ──
         $contacted    = (clone $base)->whereNotNull('leads.last_contacted_at')->count();
         $contactRate  = $total > 0 ? round(($contacted / $total) * 100, 1) : 0;
 
-        // ── By Source ──
         $bySource = (clone $base)
             ->select('leads.source', DB::raw('count(*) as total'))
             ->groupBy('leads.source')
@@ -101,7 +91,6 @@ class ReportService
             ->get()
             ->map(fn ($r) => ['source' => $r->source ?: 'Unknown', 'total' => $r->total]);
 
-        // ── By Status ──
         $byStatus = (clone $base)
             ->join('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
             ->select('lead_statuses.name', 'lead_statuses.color', DB::raw('count(*) as total'))
@@ -110,7 +99,6 @@ class ReportService
             ->get()
             ->map(fn ($r) => ['name' => $r->name, 'color' => $r->color, 'total' => $r->total]);
 
-        // ── Last 7 days ──
         $last7 = [];
         for ($i = 6; $i >= 0; $i--) {
             $day   = $now->copy()->subDays($i);
@@ -118,7 +106,6 @@ class ReportService
             $last7[] = ['day' => $day->format('D'), 'date' => $day->toDateString(), 'total' => $count];
         }
 
-        // ── Branch Breakdown (owners only) ──
         $branchBreakdown = [];
         if (!$user->branch_id) {
             $branchBreakdown = DB::table('leads')
@@ -163,9 +150,7 @@ class ReportService
 
     public static function invalidateCache(string $businessId): void
     {
-        // Invalidate base cache and any branch-specific caches
         Cache::forget("dashboard_stats:{$businessId}");
-        // Also clear any branch-filtered versions (can't enumerate, so set short TTL)
         $branches = DB::table('branches')->where('business_id', $businessId)->pluck('id');
         foreach ($branches as $bid) {
             Cache::forget("dashboard_stats:{$businessId}:{$bid}");
@@ -183,7 +168,6 @@ class ReportService
         $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
         $now        = Carbon::now();
 
-        // ── Overdue Follow-Ups ──
         $overdue = DB::table('lead_followups')
             ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
             ->leftJoin('users', 'leads.assigned_to', '=', 'users.id')
@@ -210,7 +194,6 @@ class ReportService
             ->get()
             ->map(fn ($r) => $this->formatQueueRow($r, 'overdue'));
 
-        // ── Follow-Ups Due Today ──
         $dueToday = DB::table('lead_followups')
             ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
             ->leftJoin('users', 'leads.assigned_to', '=', 'users.id')
@@ -238,7 +221,6 @@ class ReportService
             ->get()
             ->map(fn ($r) => $this->formatQueueRow($r, 'due_today'));
 
-        // ── Unassigned Leads ──
         $unassigned = DB::table('leads')
             ->leftJoin('lead_statuses', 'leads.lead_status_id', '=', 'lead_statuses.id')
             ->where('leads.business_id', $businessId)
@@ -369,11 +351,24 @@ class ReportService
                 'users.name as assigned_to',
                 'branches.name as branch'
             )
-            ->orderByDesc('leads.created_at')
-            ->limit(500);
+            ->orderByDesc('leads.created_at');
 
-        $leads = $query->get()->map(function ($r) use ($now) {
-            // Days since last contact
+        // T88 FIX: Run summary counts as a separate aggregate query BEFORE applying
+        // the LIMIT. Previously, summary was computed on the in-memory collection after
+        // limiting to 500 rows — giving wrong totals for businesses with > 500 leads.
+        $summaryQuery = clone $query;
+        $summaryRow = $summaryQuery
+            ->select(
+                DB::raw('count(*) as total'),
+                DB::raw('count(case when lead_statuses.is_converted then 1 end) as converted')
+            )
+            ->first();
+
+        $totalCount     = (int) ($summaryRow->total ?? 0);
+        $convertedCount = (int) ($summaryRow->converted ?? 0);
+        $rate           = $totalCount > 0 ? round(($convertedCount / $totalCount) * 100, 1) : 0;
+
+        $leads = $query->limit(500)->get()->map(function ($r) use ($now) {
             $daysSince = null;
             $contactLabel = 'never';
             if ($r->last_contacted_at) {
@@ -400,17 +395,13 @@ class ReportService
             ];
         });
 
-        // Summary counts
-        $total     = $leads->count();
-        $converted = $leads->where('is_converted', true)->count();
-        $rate      = $total > 0 ? round(($converted / $total) * 100, 1) : 0;
-
         return [
             'leads'   => $leads->values(),
             'summary' => [
-                'total'           => $total,
-                'converted'       => $converted,
+                'total'           => $totalCount,
+                'converted'       => $convertedCount,
                 'conversion_rate' => $rate,
+                'truncated'       => $totalCount > 500,
             ],
         ];
     }
@@ -434,7 +425,6 @@ class ReportService
             ->select('id', 'name', 'email')
             ->get();
 
-        // Get converted status IDs
         $convertedStatusIds = DB::table('lead_statuses')
             ->where('business_id', $businessId)
             ->where('is_converted', true)
@@ -454,7 +444,6 @@ class ReportService
             $contacted = (clone $leadBase)->whereNotNull('last_contacted_at')->count();
             $convRate  = $assigned > 0 ? round(($converted / $assigned) * 100, 1) : 0;
 
-            // Missed follow-ups
             $missedFollowups = DB::table('lead_followups')
                 ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
                 ->where('lead_followups.business_id', $businessId)
@@ -465,7 +454,6 @@ class ReportService
                 ->when($dateTo, fn ($q) => $q->whereDate('lead_followups.follow_up_at', '<=', $dateTo))
                 ->count();
 
-            // Follow-up compliance
             $totalFollowups = DB::table('lead_followups')
                 ->join('leads', 'lead_followups.lead_id', '=', 'leads.id')
                 ->where('lead_followups.business_id', $businessId)
@@ -487,7 +475,9 @@ class ReportService
                 ? round(($doneFollowups / $totalFollowups) * 100, 1)
                 : null;
 
-            // Average response time (minutes from lead creation to first activity by this user)
+            // T65 FIX: Replace PostgreSQL-only EXTRACT(EPOCH FROM ...) and ::timestamp casting
+            // with TIMESTAMPDIFF which is supported on both MySQL and PostgreSQL (via Laravel).
+            // The original produced SQL errors on MySQL, returning null for all users.
             $avgResponseTime = DB::table('lead_activities')
                 ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
                 ->where('lead_activities.business_id', $businessId)
@@ -496,7 +486,7 @@ class ReportService
                 ->whereRaw('lead_activities.created_at = (SELECT MIN(la2.created_at) FROM lead_activities la2 WHERE la2.lead_id = lead_activities.lead_id AND la2.user_id = ?)', [$u->id])
                 ->when($dateFrom, fn ($q) => $q->whereDate('leads.created_at', '>=', $dateFrom))
                 ->when($dateTo, fn ($q) => $q->whereDate('leads.created_at', '<=', $dateTo))
-                ->selectRaw('AVG(EXTRACT(EPOCH FROM (lead_activities.created_at::timestamp - leads.created_at::timestamp)) / 60) as avg_minutes')
+                ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, leads.created_at, lead_activities.created_at) / 60) as avg_minutes')
                 ->value('avg_minutes');
 
             return [
@@ -536,6 +526,10 @@ class ReportService
             ->pluck('id')
             ->toArray();
 
+        $convertedIdList = implode("','", $convertedStatusIds);
+
+        // T65 FIX: Replace PostgreSQL-only EXTRACT(EPOCH FROM (converted_at::timestamp - created_at::timestamp))
+        // with TIMESTAMPDIFF(SECOND, created_at, converted_at) which works on MySQL.
         $sources = DB::table('leads')
             ->where('business_id', $businessId)
             ->whereNull('deleted_at')
@@ -545,9 +539,8 @@ class ReportService
             ->select(
                 DB::raw("COALESCE(source, 'Unknown') as source"),
                 DB::raw('count(*) as total'),
-                DB::raw("count(case when lead_status_id in ('" . implode("','", $convertedStatusIds) . "') then 1 end) as converted"),
-                // Avg days to convert (created_at to converted_at)
-                DB::raw("AVG(CASE WHEN lead_status_id in ('" . implode("','", $convertedStatusIds) . "') AND converted_at IS NOT NULL THEN EXTRACT(EPOCH FROM (converted_at::timestamp - created_at::timestamp)) / 86400 ELSE NULL END) as avg_days_to_convert")
+                DB::raw("count(case when lead_status_id in ('" . $convertedIdList . "') then 1 end) as converted"),
+                DB::raw("AVG(CASE WHEN lead_status_id in ('" . $convertedIdList . "') AND converted_at IS NOT NULL THEN TIMESTAMPDIFF(SECOND, created_at, converted_at) / 86400.0 ELSE NULL END) as avg_days_to_convert")
             )
             ->groupBy(DB::raw("COALESCE(source, 'Unknown')"))
             ->orderByDesc('total')
