@@ -82,18 +82,29 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/custom-fields/{id}',    [CustomFieldController::class, 'update']);
     Route::delete('/custom-fields/{id}', [CustomFieldController::class, 'destroy']);
 
-    // Leads
-    Route::get('/leads/followups/overdue',                       [LeadController::class, 'overdueFollowups']);
-    Route::get('/leads',                                         [LeadController::class, 'index']);
-    Route::post('/leads',                                        [LeadController::class, 'store']);
-    Route::get('/leads/{id}',                                    [LeadController::class, 'show']);
-    Route::put('/leads/{id}',                                    [LeadController::class, 'update']);
-    Route::put('/leads/{id}/status',                             [LeadController::class, 'changeStatus']);
-    Route::put('/leads/{id}/assign',                             [LeadController::class, 'assign']);
-    Route::post('/leads/{id}/notes',                             [LeadController::class, 'addNote']);
-    Route::post('/leads/{id}/followup',                          [LeadController::class, 'setFollowUp']);
-    Route::get('/leads/{id}/followups',                          [LeadController::class, 'listFollowups']);
-    Route::post('/leads/{id}/followups/{followupId}/done',       [LeadController::class, 'markFollowupDone']);
+    // ---------------------------------------------------------------------------
+    // Leads — T61: Split into read (all roles) vs mutations (owner|manager|executive)
+    // The overdue route MUST be registered before /{id} to prevent Laravel
+    // from matching "followups" as a dynamic {id} segment.
+    // ---------------------------------------------------------------------------
+
+    // Leads — read (all authenticated roles, including read-only)
+    Route::get('/leads/followups/overdue',  [LeadController::class, 'overdueFollowups']);
+    Route::get('/leads',                    [LeadController::class, 'index']);
+    Route::get('/leads/{id}',               [LeadController::class, 'show']);
+    Route::get('/leads/{id}/followups',     [LeadController::class, 'listFollowups']);
+    Route::get('leads/{id}/whatsapp',       [WhatsAppTemplateController::class, 'conversations']);
+
+    // Leads — mutations (owner, manager, executive only)
+    Route::middleware('role:owner|manager|executive')->group(function () {
+        Route::post('/leads',                                   [LeadController::class, 'store']);
+        Route::put('/leads/{id}',                               [LeadController::class, 'update']);
+        Route::put('/leads/{id}/status',                        [LeadController::class, 'changeStatus']);
+        Route::put('/leads/{id}/assign',                        [LeadController::class, 'assign']);
+        Route::post('/leads/{id}/notes',                        [LeadController::class, 'addNote']);
+        Route::post('/leads/{id}/followup',                     [LeadController::class, 'setFollowUp']);
+        Route::post('/leads/{id}/followups/{followupId}/done',  [LeadController::class, 'markFollowupDone']);
+    });
 
     // Branches
     Route::get('/branches',             [BranchController::class, 'index']);
@@ -120,17 +131,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('reports/team',         [\App\Modules\Reports\Controllers\ReportsController::class, 'team']);
     Route::get('reports/sources',      [\App\Modules\Reports\Controllers\ReportsController::class, 'sources']);
 
-    // Exports
-    Route::post('reports/exports',                  [\App\Modules\Reports\Controllers\ExportController::class, 'start']);
-    Route::get('reports/exports/{exportId}/status', [\App\Modules\Reports\Controllers\ExportController::class, 'status']);
-    Route::get('reports/exports/{exportId}/download', [\App\Modules\Reports\Controllers\ExportController::class, 'download']);
+    // Exports — T54 FIX: download route moved inside auth:sanctum (was public at bottom of file)
+    Route::post('reports/exports',                    [ExportController::class, 'start']);
+    Route::get('reports/exports/{exportId}/status',   [ExportController::class, 'status']);
+    Route::get('reports/exports/{exportId}/download', [ExportController::class, 'download']);
 
     // WhatsApp Templates
     Route::get('whatsapp/templates',         [WhatsAppTemplateController::class, 'index']);
     Route::post('whatsapp/templates',        [WhatsAppTemplateController::class, 'store']);
     Route::put('whatsapp/templates/{id}',    [WhatsAppTemplateController::class, 'update']);
     Route::delete('whatsapp/templates/{id}', [WhatsAppTemplateController::class, 'destroy']);
-    Route::get('leads/{id}/whatsapp', [WhatsAppTemplateController::class, 'conversations']);
 
     // Agency panel
     Route::middleware('agency_access')->prefix('agency')->group(function () {
@@ -145,3 +155,6 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
 });
+
+// NOTE: The export download route that previously lived here (outside auth:sanctum) has been
+// moved inside the middleware group above. This line is intentionally removed (T54 fix).
