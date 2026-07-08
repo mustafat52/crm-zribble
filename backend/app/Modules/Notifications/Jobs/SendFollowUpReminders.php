@@ -7,7 +7,7 @@ use App\Models\Business;
 use App\Modules\Automations\Services\AutomationService;
 use App\Modules\Notifications\Models\InAppNotification;
 use App\Modules\WhatsApp\Services\WhatsAppService;
-use App\Mail\LeadCreatedMail;
+use App\Mail\FollowUpReminderMail;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -31,7 +31,7 @@ class SendFollowUpReminders implements ShouldQueue
      *
      * For each due follow-up:
      *  1. Sends in-app notification to salesperson
-     *  2. Sends reminder email to salesperson
+     *  2. Sends reminder email to salesperson (T69: now uses FollowUpReminderMail)
      *  3. Sends WhatsApp reminder to salesperson (TWA5-D)
      *  4. Sends courtesy email to customer if lead has email (T41)
      */
@@ -81,11 +81,18 @@ class SendFollowUpReminders implements ShouldQueue
                         'is_read'     => false,
                     ]);
 
-                    Mail::to($recipientEmail)->send(new LeadCreatedMail(
+                    // T69 FIX: Use FollowUpReminderMail instead of LeadCreatedMail.
+                    // LeadCreatedMail sends "New Lead Received" as subject — completely
+                    // wrong for a follow-up reminder, confusing recipients.
+                    Mail::to($recipientEmail)->send(new FollowUpReminderMail(
                         leadName:     $followup->lead_name,
                         leadMobile:   $followup->lead_mobile,
-                        leadSource:   'follow_up_reminder',
                         businessName: $followup->business_name,
+                        dueAt:        \Carbon\Carbon::parse($followup->follow_up_at)
+                                          ->format('g:i A, d M Y'),
+                        note:         $followup->note,
+                        leadId:       $followup->lead_id,
+                        appUrl:       $appUrl,
                     ));
                 }
 
