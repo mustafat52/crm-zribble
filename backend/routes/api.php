@@ -13,8 +13,9 @@ use App\Modules\Leads\Controllers\CustomFieldController;
 use App\Modules\Leads\Controllers\IngestController;
 use App\Modules\Reports\Controllers\ExportController;
 use App\Modules\Notifications\Controllers\PushSubscriptionController;
-use App\Modules\Automations\Controllers\AutomationController;
 use App\Modules\WhatsApp\Controllers\WhatsAppTemplateController;
+use App\Modules\Automations\Controllers\AutomationController;
+
 
 
 // ---------------------------------------------------------------------------
