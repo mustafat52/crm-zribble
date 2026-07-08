@@ -6,8 +6,11 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { api } from '@/lib/api'
 
+// T60: Added refresh_token and family_id to match the full login API response
 interface LoginResponse {
   access_token: string
+  refresh_token: string
+  family_id: string
   user: {
     id: string
     name: string
@@ -19,7 +22,7 @@ interface LoginResponse {
 }
 
 export default function LoginPage() {
-  const router = useRouter()
+  const router  = useRouter()
   const setAuth = useAuthStore((s) => s.setAuth)
 
   const [email, setEmail]       = useState('')
@@ -34,13 +37,23 @@ export default function LoginPage() {
 
     try {
       const res = await api.post<LoginResponse>('/auth/login', { email, password })
-      setAuth(res.access_token,{
-        ...res.user,
-        roles: res.user.roles ?? [res.user.roles].filter(Boolean), // convert single role to array
-      })
+
+      // T60: Pass refresh_token and family_id so they are persisted in the store
+      // and available to api.ts for silent token refresh on 401
+      setAuth(
+        res.access_token,
+        {
+          ...res.user,
+          roles: res.user.roles ?? [res.user.roles].filter(Boolean),
+        },
+        res.refresh_token,
+        res.family_id,
+      )
+
       const isAgencyUser =
-      res.user.roles?.includes('agency_admin') ||
-      res.user.roles?.includes('agency_staff')
+        res.user.roles?.includes('agency_admin') ||
+        res.user.roles?.includes('agency_staff')
+
       router.push(isAgencyUser ? '/admin/overview' : '/leads')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Login failed')
