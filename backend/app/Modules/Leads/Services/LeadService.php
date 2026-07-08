@@ -194,8 +194,8 @@ class LeadService
         $newStatus   = LeadStatus::findOrFail($statusId);
 
         $lead->update([
-            'lead_status_id' => $statusId,
-            'converted_at'   => $newStatus->is_converted ? now() : $lead->converted_at,
+        'lead_status_id' => $statusId,
+        'converted_at'   => $newStatus->is_converted ? ($lead->converted_at ?? now()) : null,
         ]);
 
         $this->logActivity($lead, 'status_changed', "Status changed to: {$newStatus->name}");
