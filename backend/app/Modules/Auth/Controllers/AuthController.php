@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Modules\Auth\Models\LoginHistory;
 use App\Modules\Auth\Models\TokenFamily;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
@@ -39,7 +41,6 @@ class AuthController extends Controller
         if (! $user || ! Hash::check($request->password, $user->password)) {
             RateLimiter::hit($throttleKey, 60);
 
-            // Log failed attempt
             $this->logLoginAttempt($request, $user, 'failed', 'wrong_password');
 
             return response()->json(['message' => 'Invalid credentials.'], 401);
@@ -75,10 +76,8 @@ class AuthController extends Controller
             'expires_at'          => Carbon::now()->addDays(30),
         ]);
 
-        // Update last login timestamp
         $user->update(['last_login_at' => now()]);
 
-        // Log successful login
         $this->logLoginAttempt($request, $user, 'success');
 
         return response()->json([
@@ -86,7 +85,7 @@ class AuthController extends Controller
             'refresh_token' => $refreshToken,
             'family_id'     => $familyId,
             'token_type'    => 'Bearer',
-            'expires_in'    => 86400, // 1 day in seconds
+            'expires_in'    => 86400,
             'user'          => $this->userPayload($user),
         ]);
     }
@@ -107,20 +106,16 @@ class AuthController extends Controller
             ->first();
 
         if (! $family) {
-            // family_id not found or already invalidated
             return response()->json(['message' => 'Invalid or expired session. Please log in again.'], 401);
         }
 
         // Stolen token detection:
-        // If the hash does NOT match, someone is replaying an old token.
-        // Invalidate the entire family immediately.
         if (! Hash::check($request->refresh_token, $family->refresh_token_hash)) {
             $family->update([
                 'is_invalidated' => true,
                 'invalidated_at' => now(),
             ]);
 
-            // Also invalidate all other families for this user from the same family_id
             TokenFamily::where('family_id', $request->family_id)
                 ->update(['is_invalidated' => true, 'invalidated_at' => now()]);
 
@@ -168,7 +163,6 @@ class AuthController extends Controller
     // -------------------------------------------------------------------------
     public function logout(Request $request): JsonResponse
     {
-        // Revoke the current Sanctum access token
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out successfully.']);
@@ -181,10 +175,8 @@ class AuthController extends Controller
     {
         $user = $request->user();
 
-        // Revoke all Sanctum tokens
         $user->tokens()->delete();
 
-        // Invalidate all token families
         TokenFamily::where('user_id', $user->id)
             ->update(['is_invalidated' => true, 'invalidated_at' => now()]);
 
@@ -228,24 +220,55 @@ class AuthController extends Controller
     }
 
     // -------------------------------------------------------------------------
-    // Forgot / Reset password (stubs — email integration in Week 3)
+    // T58: Forgot / Reset password — implemented via Laravel password broker
     // -------------------------------------------------------------------------
+
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate(['email' => 'required|email']);
-        // TODO: Week 3 — wire up Resend email + signed reset URL
-        return response()->json(['message' => 'If that email exists, a reset link has been sent.']);
+
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
+
+        if ($status === Password::RESET_LINK_SENT) {
+            return response()->json(['message' => 'If that email exists, a reset link has been sent.']);
+        }
+
+        return response()->json([
+            'message' => 'Unable to send reset link. Please check the email address and try again.',
+        ], 422);
     }
 
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
-            'token'    => 'required',
-            'email'    => 'required|email',
-            'password' => 'required|min:8|confirmed',
+            'token'                 => 'required',
+            'email'                 => 'required|email',
+            'password'              => 'required|min:8|confirmed',
+            'password_confirmation' => 'required',
         ]);
-        // TODO: Week 3 — implement with Laravel's built-in password broker
-        return response()->json(['message' => 'Password reset successfully.']);
+
+        $status = Password::reset(
+            $request->only('email', 'password', 'password_confirmation', 'token'),
+            function (User $user, string $password) {
+                $user->forceFill([
+                    'password' => Hash::make($password),
+                ])->setRememberToken(Str::random(60));
+
+                $user->save();
+
+                event(new PasswordReset($user));
+            }
+        );
+
+        if ($status === Password::PASSWORD_RESET) {
+            return response()->json(['message' => 'Password reset successfully.']);
+        }
+
+        return response()->json([
+            'message' => 'Invalid or expired reset token. Please request a new password reset.',
+        ], 422);
     }
 
     // -------------------------------------------------------------------------
@@ -270,7 +293,7 @@ class AuthController extends Controller
     private function logLoginAttempt(Request $request, ?User $user, string $outcome, ?string $reason = null): void
     {
         if (! $user) {
-            return; // Can't log without a user record
+            return;
         }
 
         LoginHistory::create([
@@ -297,6 +320,9 @@ class AuthController extends Controller
         if (str_contains($agent, 'mobile') || str_contains($agent, 'android')) {
             return 'mobile';
         }
-        return 'web';
+        if (str_contains($agent, 'tablet') || str_contains($agent, 'ipad')) {
+            return 'tablet';
+        }
+        return 'desktop';
     }
 }
