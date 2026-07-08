@@ -78,15 +78,17 @@ class LeadService
 
         if ($duplicateHandling === 'merge') {
             // Check by mobile first, then email
-            $existing = Lead::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
+            $existing = Lead::withoutGlobalScopes()
+                ->where('business_id', $businessId)
                 ->where('mobile', $data['mobile'])
                 ->first();
 
-            if (!$existing && !empty($data['email'])) {
-                $existing = Lead::withoutGlobalScope(\App\Models\Scopes\BranchScope::class)
-                    ->where('email', $data['email'])
-                    ->whereNotNull('email')
-                    ->first();
+        if (!$existing && !empty($data['email'])) {
+            $existing = Lead::withoutGlobalScopes()
+                ->where('business_id', $businessId)
+                ->where('email', $data['email'])
+                ->whereNotNull('email')
+                ->first();
             }
 
             if ($existing) {
@@ -114,7 +116,10 @@ class LeadService
         }
 
         // Get the default status for this business (lowest sort_order)
-        $defaultStatus = LeadStatus::orderBy('sort_order')->first();
+        $defaultStatus = LeadStatus::withoutGlobalScopes()
+            ->where('business_id', $businessId)
+            ->orderBy('sort_order')
+            ->first();
 
         $lead = Lead::create([
             'business_id'    => $businessId,
@@ -210,7 +215,9 @@ class LeadService
         $lead = Lead::findOrFail($id);
 
         if ($userId) {
-            $user = User::findOrFail($userId);
+            $user = User::where('id', $userId)
+                ->where('business_id', $lead->business_id)
+                ->firstOrFail();
         }
 
         $lead->update([
