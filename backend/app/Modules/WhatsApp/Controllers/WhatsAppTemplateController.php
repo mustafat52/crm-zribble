@@ -11,7 +11,12 @@ class WhatsAppTemplateController extends Controller
 {
     public function index()
     {
-        $templates = WhatsAppTemplate::orderBy('name')->get();
+        // T55 FIX: Scope to authenticated user's business explicitly.
+        // If WhatsAppTemplate does not boot BusinessScope, this prevents
+        // leaking other businesses' templates.
+        $templates = WhatsAppTemplate::where('business_id', Auth::user()->business_id)
+            ->orderBy('name')
+            ->get();
 
         return response()->json($templates->map(fn($t) => $this->format($t)));
     }
@@ -27,7 +32,10 @@ class WhatsAppTemplateController extends Controller
             'template_id' => 'nullable|string|max:100',
         ]);
 
-        $exists = WhatsAppTemplate::where('name', $data['name'])->exists();
+        $exists = WhatsAppTemplate::where('name', $data['name'])
+            ->where('business_id', Auth::user()->business_id)
+            ->exists();
+
         if ($exists) {
             return response()->json(['message' => 'A template with this name already exists.'], 422);
         }
@@ -48,7 +56,11 @@ class WhatsAppTemplateController extends Controller
 
     public function update(Request $request, string $id)
     {
-        $template = WhatsAppTemplate::findOrFail($id);
+        // T55 FIX: Scope findOrFail to the authenticated business.
+        // Without this, a user from Business A can update Business B's templates.
+        $template = WhatsAppTemplate::where('id', $id)
+            ->where('business_id', Auth::user()->business_id)
+            ->firstOrFail();
 
         $data = $request->validate([
             'name'        => 'sometimes|string|max:100',
@@ -67,7 +79,11 @@ class WhatsAppTemplateController extends Controller
 
     public function destroy(string $id)
     {
-        $template = WhatsAppTemplate::findOrFail($id);
+        // T55 FIX: Scope to authenticated business before deactivating.
+        $template = WhatsAppTemplate::where('id', $id)
+            ->where('business_id', Auth::user()->business_id)
+            ->firstOrFail();
+
         $template->update(['is_active' => false]);
 
         return response()->json(['message' => 'Template deactivated.']);
@@ -91,7 +107,7 @@ class WhatsAppTemplateController extends Controller
     public function conversations(string $leadId)
     {
         $conversations = \App\Modules\WhatsApp\Models\WhatsAppConversation::withoutGlobalScopes()
-            ->where('business_id', \Illuminate\Support\Facades\Auth::user()->business_id)
+            ->where('business_id', Auth::user()->business_id)
             ->where('lead_id', $leadId)
             ->orderBy('sent_at', 'asc')
             ->get()
