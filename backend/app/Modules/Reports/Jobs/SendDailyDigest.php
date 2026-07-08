@@ -37,10 +37,31 @@ class SendDailyDigest implements ShouldQueue
 
     private function sendDigestForBusiness(object $business): void
     {
-        // Find the owner of this business
+        // T66 FIX: Replace PostgreSQL-only id::text cast with a database-agnostic approach.
+        // The original `whereRaw('id::text IN (...)')` failed on MySQL.
+        // Using the same UUID-safe two-step pattern already established elsewhere in the codebase:
+        // 1. Look up owner role_id from roles table
+        // 2. Get matching user IDs from model_has_roles
+        // 3. Query users table with whereIn
+        $ownerRoleId = DB::table('roles')
+            ->where('name', 'owner')
+            ->where('guard_name', 'sanctum')
+            ->value('id');
+
+        if (!$ownerRoleId) {
+            Log::warning('DailyDigest: owner role not found, skipping business ' . $business->id);
+            return;
+        }
+
+        $ownerUserIds = DB::table('model_has_roles')
+            ->where('role_id', $ownerRoleId)
+            ->where('model_type', 'App\\Models\\User')
+            ->pluck('model_id');
+
         $owner = DB::table('users')
             ->where('business_id', $business->id)
-            ->whereRaw('id::text IN (SELECT model_id FROM model_has_roles WHERE role_id IN (SELECT id FROM roles WHERE name = ?))', ['owner'])
+            ->whereIn('id', $ownerUserIds)
+            ->where('is_active', true)
             ->select('id', 'name', 'email', 'phone')
             ->first();
 
@@ -54,7 +75,6 @@ class SendDailyDigest implements ShouldQueue
         $weekStart  = $now->copy()->startOfWeek();
         $monthStart = $now->copy()->startOfMonth();
 
-        // Compute stats
         $totalToday = DB::table('leads')
             ->where('business_id', $business->id)
             ->where('created_at', '>=', $todayStart)
