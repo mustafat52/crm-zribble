@@ -6,15 +6,16 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\Auth;
-use App\Models\LeadStatus;
-use App\Models\Lead;
+// T57 FIX: Use module-level models instead of legacy flat models.
+// The legacy App\Models\LeadStatus did not guarantee BusinessScope on aggregates.
+use App\Modules\Leads\Models\LeadStatus;
+use App\Modules\Leads\Models\Lead;
 
 class LeadStatusController extends Controller
 {
     /**
      * GET /api/v1/lead-statuses
      * Returns all statuses for this business ordered by sort_order.
-     * Already existed — unchanged.
      */
     public function index(): JsonResponse
     {
@@ -37,8 +38,11 @@ class LeadStatusController extends Controller
             'is_terminal'  => 'sometimes|boolean',
         ]);
 
-        // Place new status at the end of the list
-        $maxOrder = LeadStatus::max('sort_order') ?? 0;
+        // T57 FIX: Scope max(sort_order) to the current business.
+        // Eloquent aggregate methods bypass global scopes, so without an explicit
+        // where() clause this returns the global max across all businesses.
+        $maxOrder = LeadStatus::where('business_id', Auth::user()->business_id)
+            ->max('sort_order') ?? 0;
 
         $status = LeadStatus::create([
             'business_id'  => Auth::user()->business_id,
@@ -63,6 +67,11 @@ class LeadStatusController extends Controller
 
         if (! $status) {
             return response()->json(['message' => 'Status not found.'], 404);
+        }
+
+        // T57 FIX: Verify ownership before allowing update.
+        if ($status->business_id !== Auth::user()->business_id) {
+            return response()->json(['message' => 'Not found.'], 404);
         }
 
         $data = $request->validate([
@@ -90,6 +99,11 @@ class LeadStatusController extends Controller
 
         if (! $status) {
             return response()->json(['message' => 'Status not found.'], 404);
+        }
+
+        // T57 FIX: Verify ownership before allowing delete.
+        if ($status->business_id !== Auth::user()->business_id) {
+            return response()->json(['message' => 'Not found.'], 404);
         }
 
         // Block deletion if leads are using this status —
