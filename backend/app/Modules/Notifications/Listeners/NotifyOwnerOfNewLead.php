@@ -1,5 +1,7 @@
 <?php
+
 namespace App\Modules\Notifications\Listeners;
+
 use App\Mail\LeadCreatedMail;
 use App\Modules\Leads\Events\LeadCreated;
 use App\Modules\Notifications\Models\InAppNotification;
@@ -39,6 +41,12 @@ class NotifyOwnerOfNewLead
             $assignedName = $assignedUser?->name;
         }
 
+        // Read business WA toggle settings (default true so existing businesses
+        // don't silently stop sending without having set the toggles)
+        $settings                    = $business->settings ?? [];
+        $waNewLeadAlert              = $settings['wa_new_lead_alert']           ?? true;
+        $waCustomerAcknowledgement   = $settings['wa_customer_acknowledgement'] ?? true;
+
         // 1. Send email to owner
         Mail::to($owner->email)->send(new LeadCreatedMail(
             leadName:     $lead->name,
@@ -61,7 +69,7 @@ class NotifyOwnerOfNewLead
             'created_at'  => now(),
         ]);
 
-        // 3. If lead is assigned to someone else, notify them too
+        // 3. Notify assignee if different from owner
         if ($lead->assigned_to && $lead->assigned_to !== $owner->id) {
             InAppNotification::create([
                 'business_id' => $business->id,
@@ -76,11 +84,9 @@ class NotifyOwnerOfNewLead
             ]);
         }
 
-        // 4. Send WhatsApp to owner (if they have a phone number)
-        // owner_lead_new template expects 7 variables:
-        // {{1}} owner name, {{2}} business name, {{3}} customer name,
-        // {{4}} customer number, {{5}} request type, {{6}} source, {{7}} lead ID
-        if ($owner->phone) {
+        // 4. T71: Send WhatsApp to owner (guarded by wa_new_lead_alert setting)
+        // owner_lead_new template expects 7 variables.
+        if ($owner->phone && $waNewLeadAlert) {
             try {
                 $waService = new WhatsAppService();
                 $waService->sendTemplate(
@@ -106,21 +112,22 @@ class NotifyOwnerOfNewLead
             }
         }
 
-        // 5. Send WhatsApp to all managers in the business
-        try {
-            $waService = new WhatsAppService();
-            $waService->notifyAllManagers($business, $lead);
-        } catch (\Throwable $e) {
-            Log::error('[NotifyOwnerOfNewLead] notifyAllManagers failed', [
-                'error'   => $e->getMessage(),
-                'lead_id' => $lead->id,
-            ]);
+        // 5. Send WhatsApp to all managers (also guarded by wa_new_lead_alert setting)
+        if ($waNewLeadAlert) {
+            try {
+                $waService = new WhatsAppService();
+                $waService->notifyAllManagers($business, $lead);
+            } catch (\Throwable $e) {
+                Log::error('[NotifyOwnerOfNewLead] notifyAllManagers failed', [
+                    'error'   => $e->getMessage(),
+                    'lead_id' => $lead->id,
+                ]);
+            }
         }
 
-        // 6. Send WhatsApp acknowledgement to customer
-        // lead_message_customer_24102025 template expects 3 variables:
-        // {{1}} business name, {{2}} address, {{3}} contact number
-        if ($lead->mobile) {
+        // 6. T71: Send WhatsApp acknowledgement to customer (guarded by wa_customer_acknowledgement)
+        // lead_message_customer_24102025 template expects 3 variables.
+        if ($lead->mobile && $waCustomerAcknowledgement) {
             try {
                 $waService = new WhatsAppService();
                 $waService->sendTemplate(

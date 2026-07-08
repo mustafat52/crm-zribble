@@ -28,8 +28,13 @@ class BusinessController extends Controller
 
     /**
      * PUT /api/v1/business
-     * Updates name, timezone, whatsapp_number, and settings.duplicate_handling.
-     * Only the owner role may call this endpoint.
+     * Updates name, timezone, whatsapp_number, settings.duplicate_handling,
+     * and WhatsApp notification toggles.
+     *
+     * T71 FIX: Accept and persist WhatsApp toggle settings.
+     * Previously, the frontend sent wa_new_lead_alert, wa_customer_acknowledgement,
+     * wa_followup_reminder inside a `settings` object, but BusinessController ignored them.
+     * The toggles appeared to work in the UI but were never saved.
      */
     public function update(Request $request): JsonResponse
     {
@@ -44,6 +49,11 @@ class BusinessController extends Controller
             'timezone'           => 'sometimes|required|string|max:100',
             'whatsapp_number'    => 'sometimes|nullable|string|max:20',
             'duplicate_handling' => 'sometimes|in:merge,new',
+            // T71: Accept WhatsApp notification toggle settings
+            'settings'                              => 'sometimes|array',
+            'settings.wa_new_lead_alert'            => 'sometimes|boolean',
+            'settings.wa_customer_acknowledgement'  => 'sometimes|boolean',
+            'settings.wa_followup_reminder'         => 'sometimes|boolean',
         ]);
 
         $business = Business::find($user->business_id);
@@ -53,19 +63,33 @@ class BusinessController extends Controller
         }
 
         // Update top-level columns
-        if (isset($data['name']))            $business->name             = $data['name'];
-        if (isset($data['timezone']))        $business->timezone         = $data['timezone'];
+        if (isset($data['name']))            $business->name         = $data['name'];
+        if (isset($data['timezone']))        $business->timezone     = $data['timezone'];
         if (array_key_exists('whatsapp_number', $data)) {
             $business->whatsapp_number = $data['whatsapp_number'];
         }
 
-        // Merge duplicate_handling into settings JSON — keep all other settings untouched
+        // Merge all settings keys into the existing settings JSON
+        // This preserves any existing keys (like stale_lead_days) while updating only
+        // what was sent in this request.
+        $settings = $business->settings ?? [];
+
         if (isset($data['duplicate_handling'])) {
-            $settings = $business->settings ?? [];
             $settings['duplicate_handling'] = $data['duplicate_handling'];
-            $business->settings = $settings;
         }
 
+        // T71: Persist WhatsApp notification toggles into settings JSON
+        if (isset($data['settings']['wa_new_lead_alert'])) {
+            $settings['wa_new_lead_alert'] = $data['settings']['wa_new_lead_alert'];
+        }
+        if (isset($data['settings']['wa_customer_acknowledgement'])) {
+            $settings['wa_customer_acknowledgement'] = $data['settings']['wa_customer_acknowledgement'];
+        }
+        if (isset($data['settings']['wa_followup_reminder'])) {
+            $settings['wa_followup_reminder'] = $data['settings']['wa_followup_reminder'];
+        }
+
+        $business->settings = $settings;
         $business->save();
 
         return response()->json($this->format($business));
