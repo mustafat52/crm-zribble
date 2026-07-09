@@ -139,8 +139,6 @@ class LeadService
             'custom_fields'  => $data['custom_fields'] ?? [],
         ]);
 
-        $this->logActivity($lead, 'created', 'Lead created.');
-
         event(new LeadCreated($lead));
         \App\Modules\Reports\Services\ReportService::invalidateCache($lead->business_id);
 
