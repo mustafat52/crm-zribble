@@ -44,8 +44,7 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Branch::class, BranchPolicy::class);
 
-        // ── T101 (Group-I) — uncomment after BusinessObserver.php is copied ──
-        // Business::observe(BusinessObserver::class);
+        Business::observe(BusinessObserver::class);
 
         // LeadCreated
         Event::listen(LeadCreated::class, NotifyOwnerOfNewLead::class);
