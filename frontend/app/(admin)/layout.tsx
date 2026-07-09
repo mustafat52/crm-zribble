@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { useAuthStore } from '@/store/useAuthStore'
 import { api } from '@/lib/api'
+import Link from 'next/link'
 
 const NAV = [
   { label: 'Overview',   href: '/admin/overview' },
@@ -101,7 +102,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {NAV.map(item => {
             const active = pathname?.startsWith(item.href)
             return (
-              <a key={item.href} href={item.href} style={{
+              <Link key={item.href} href={item.href} style={{
                 display: 'flex', alignItems: 'center', gap: 9,
                 padding: '8px 10px', borderRadius: 'var(--radius)',
                 fontSize: 13, fontWeight: active ? 600 : 400,
@@ -114,7 +115,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               onMouseLeave={e => { if (!active) (e.currentTarget as HTMLElement).style.background = 'transparent' }}
               >
                 {item.label}
-              </a>
+              </Link>
             )
           })}
         </div>

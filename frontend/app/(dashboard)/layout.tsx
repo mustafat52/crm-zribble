@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/useAuthStore'
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import NotificationBell from '@/components/modules/notifications/NotificationBell'
 import { api } from '@/lib/api'
+import Link from 'next/link'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -152,7 +153,7 @@ function Sidebar() {
         {NAV.map((item) => {
           const active = pathname?.startsWith(item.href)
           return (
-            <a key={item.href}
+            <Link key={item.href}
               href={item.href}
               style={{
                 display: 'flex',
@@ -178,7 +179,7 @@ function Sidebar() {
             >
               <item.icon active={active} />
               {item.label}
-            </a>
+            </Link>
           )
         })}
       </div>
