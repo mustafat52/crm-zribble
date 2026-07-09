@@ -17,6 +17,9 @@ class DevSeeder extends Seeder
     public function run(): void
     {
         // ── 1. Business ───────────────────────────────────────────────
+        $eventsBackup = Business::getEventDispatcher();
+        Business::unsetEventDispatcher();
+
         $business = Business::firstOrCreate(
             ['slug' => 'glamour-salon'],
             [
@@ -39,19 +42,19 @@ class DevSeeder extends Seeder
                 'is_active' => true,
             ]
         );
-
+        Business::setEventDispatcher($eventsBackup);
         // ── 3. Owner user ─────────────────────────────────────────────
         $owner = User::firstOrCreate(
-            ['email' => 'owner@test.com'],
-            [
-                'name'        => 'Test Owner',
-                'password'    => Hash::make('password123'),
-                'phone'       => '+919876543210',
-                'business_id' => $business->id,
-                'branch_id'   => null,          // null = sees all branches
-                'is_active'   => true,
-            ]
-        );
+         ['email' => 'owner@test.com'],
+         [
+             'name'             => 'Test Owner',
+             'password'         => Hash::make('password123'),
+             'business_id'      => $business->id,
+             'branch_id'        => null,
+             'active_branch_id' => $branch->id,   // ← ADD THIS LINE
+             'is_active'        => true,
+         ]
+     );
         $owner->syncRoles(['owner']);
 
         // ── 4. Executive user ─────────────────────────────────────────
@@ -66,6 +69,9 @@ class DevSeeder extends Seeder
             ]
         );
         $exec->syncRoles(['executive']);
+        if (! $owner->active_branch_id) {
+            $owner->update(['active_branch_id' => $branch->id]);
+        }
 
         // ── 5. Lead Statuses ──────────────────────────────────────────
         $statuses = [
