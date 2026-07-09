@@ -11,11 +11,17 @@ use App\Models\Branch;
 use App\Models\LeadStatus;
 use App\Modules\Leads\Models\Lead;
 use App\Modules\Leads\Models\LeadActivity;
+use Spatie\Permission\Models\Role;
 
 class DevSeeder extends Seeder
 {
     public function run(): void
     {
+        // ── 0. Roles (idempotent — must exist before any syncRoles call) ──────
+        foreach (['owner', 'manager', 'executive', 'viewer'] as $roleName) {
+            Role::firstOrCreate(['name' => $roleName, 'guard_name' => 'sanctum']);
+        }
+
         // ── 1. Business ───────────────────────────────────────────────
         $eventsBackup = Business::getEventDispatcher();
         Business::unsetEventDispatcher();
