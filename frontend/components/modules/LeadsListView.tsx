@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useLeadStatuses } from '@/hooks/useLeadMeta'
 import { useLeads, type LeadFilters, type Lead } from '@/hooks/useLeads'
 import { api } from '@/lib/api'
 
@@ -200,7 +201,7 @@ function SkeletonRow() {
 
 export default function LeadsListView() {
   const router = useRouter()
-
+  const { data: leadStatuses = [] } = useLeadStatuses()
   const [searchInput, setSearchInput] = useState('')
   const debouncedSearch = useDebounce(searchInput, 300)
 
@@ -320,14 +321,8 @@ export default function LeadsListView() {
           value={filters.status_id ?? ''}
           onChange={v => handleFilter('status_id', v)}
           placeholder="All statuses"
-          options={[
-            { value: '1', label: 'New' },
-            { value: '2', label: 'Contacted' },
-            { value: '3', label: 'Interested' },
-            { value: '4', label: 'Converted' },
-            { value: '5', label: 'Lost' },
-          ]}
-        />
+          options={leadStatuses.map(s => ({ value: s.id, label: s.name }))}
+/>
 
         {/* source */}
         <FilterSelect
