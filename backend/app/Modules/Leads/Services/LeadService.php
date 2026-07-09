@@ -167,16 +167,10 @@ class LeadService
     {
         $lead = Lead::findOrFail($id);
 
-        $lead->update(array_filter([
-            'name'          => $data['name'] ?? null,
-            'email'         => $data['email'] ?? null,
-            'city'          => $data['city'] ?? null,
-            'interested_in' => $data['interested_in'] ?? null,
-            'lead_value'    => $data['lead_value'] ?? null,
-            'tags'          => $data['tags'] ?? null,
-            'custom_fields' => $data['custom_fields'] ?? null,
-            'lost_reason'   => $data['lost_reason'] ?? null,
-        ], fn($v) => $v !== null));
+        $allowed    = ['name', 'email', 'city', 'interested_in', 'lead_value', 'tags', 'custom_fields', 'lost_reason'];
+        $updateData = array_intersect_key($data, array_flip($allowed));
+
+        $lead->update($updateData);
 
         $this->logActivity($lead, 'updated', 'Lead details updated.');
 
