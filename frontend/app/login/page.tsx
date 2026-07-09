@@ -18,6 +18,7 @@ interface LoginResponse {
     roles: string[]
     business_id: string
     branch_id: string | null
+    active_branch_id: string | null
   }
 }
 
