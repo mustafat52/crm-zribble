@@ -12,6 +12,7 @@ export interface Activity {
     | 'note'
     | 'call_log'
     | 'followup_set'
+    | 'followup_done'     // T83: added distinct type for marking done
     | 'whatsapp_sent'
     | 'email_sent'
     | 'duplicate_merged'
@@ -27,7 +28,11 @@ export interface LeadDetail {
   business_id: string
   branch_id: string | null
   assigned_to: string | null
-  assigned_user?: { id: string; name: string; initials: string } | null
+  // T77 FIX: Renamed from assigned_user to assignedTo to match the API response.
+  // The backend's LeadService::find() eager-loads via with(['assignedTo']) — the
+  // JSON key is 'assignedTo', not 'assigned_user'. This caused the "Assigned To"
+  // section in LeadDetailView to always show "Not assigned" even when a user was set.
+  assignedTo?: { id: string; name: string; initials: string } | null
   lead_status_id: string
   status?: { id: string; name: string; color: string }
   name: string

@@ -66,6 +66,7 @@ const ACTIVITY_ICONS: Record<string, string> = {
   note:             '✄',
   call_log:         '✆',
   followup_set:     '░',
+  followup_done:    '✓',
   whatsapp_sent:    '💬',
   email_sent:       '✉',
   duplicate_merged: '⊕',
@@ -78,6 +79,7 @@ const ACTIVITY_COLORS: Record<string, string> = {
   note:             '#6b7280',
   call_log:         '#10b981',
   followup_set:     '#8b5cf6',
+  followup_done:    '#10b981',
   whatsapp_sent:    '#25d366',
   email_sent:       '#6366f1',
   duplicate_merged: '#ef4444',
@@ -244,6 +246,7 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
   const [followupNote, setFollowupNote] = useState('')
   const [saving, setSaving]           = useState(false)
   const [success, setSuccess]         = useState('')
+  const [error, setError]           = useState('')
 
   const { data: statuses = [] } = useLeadStatuses()
   const { data: team = [] }     = useTeamMembers()
@@ -260,12 +263,17 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
 
   const handleSubmit = async () => {
     setSaving(true)
+    setError('')
     try {
       if (tab === 'note') {
         await addNote.mutateAsync({ note, type: noteType })
         setNote('')
         flash('Note added ✔')
       } else if (tab === 'status') {
+        if (selStatus === lead.lead_status_id) {
+          setSaving(false)
+          return
+        }
         await changeStatus.mutateAsync({ lead_status_id: selStatus })
         flash('Status updated ✔')
       } else if (tab === 'assign') {
@@ -277,7 +285,9 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
         setFollowupNote('')
         flash('Follow-up set ✔')
       }
-    } catch {
+    } catch (e: unknown) {
+      // T75: Display error instead of swallowing it silently
+      setError(e instanceof Error ? e.message : 'Something went wrong. Try again.')
       // errors handled globally via api.ts
     } finally {
       setSaving(false)
@@ -373,14 +383,32 @@ function ActionPanel({ lead }: { lead: LeadDetail }) {
           </div>
         )}
 
+        {error && (
+          <div style={{
+            padding: '8px 12px', borderRadius: 8,
+            background: '#fef2f2', border: '1px solid #fecaca',
+            color: '#dc2626', fontSize: 13,
+          }}>
+            {error}
+          </div>
+        )}
+
         <button
           onClick={handleSubmit}
-          disabled={saving || (tab === 'note' && !note.trim()) || (tab === 'followup' && !followupAt)}
+          // T76: Disable Save when status hasn't changed (no-op guard in handleSubmit
+          // already handles this, but disabling the button gives immediate visual feedback)
+          disabled={
+            saving ||
+            (tab === 'note' && !note.trim()) ||
+            (tab === 'followup' && !followupAt) ||
+            (tab === 'status' && selStatus === lead.lead_status_id)
+          }
           style={{
             padding: '9px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
             background: saving ? '#d1d5db' : '#7c3aed',
             color: '#fff', fontSize: 13, fontWeight: 600,
-            opacity: saving ? 0.7 : 1, transition: 'background 0.15s',
+            opacity: saving || (tab === 'status' && selStatus === lead.lead_status_id) ? 0.7 : 1,
+            transition: 'background 0.15s',
           }}
         >
           {saving ? 'Saving...' : 'Save'}
@@ -699,18 +727,18 @@ export default function LeadDetailView({ leadId }: { leadId: string }) {
 
           {/* Assignment info */}
           <SectionCard title="Assigned To">
-            {lead.assigned_user ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <Avatar name={lead.assigned_user.name} size={36} />
+              {lead.assignedTo ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Avatar name={lead.assignedTo.name} size={36} />
                 <div>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
-                    {lead.assigned_user.name}
+                    {lead.assignedTo.name}
                   </div>
                 </div>
               </div>
             ) : (
               <div style={{ color: '#9ca3af', fontSize: 13 }}>
-                Not assigned — use the Assign tab above.
+                  Not assigned — use the Assign tab above.
               </div>
             )}
           </SectionCard>
