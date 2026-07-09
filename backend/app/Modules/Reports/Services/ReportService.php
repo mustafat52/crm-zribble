@@ -33,6 +33,9 @@ class ReportService
         if ($user->branch_id) {
             $branchId = $user->branch_id;
         }
+        if (! $branchId && $user->active_branch_id) {
+            $branchId = $user->active_branch_id;
+        }
         if ($branchId) {
             $base = $base->where('leads.branch_id', $branchId);
         }
@@ -165,6 +168,9 @@ class ReportService
         $user       = Auth::user();
         $businessId = $user->business_id;
         $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        if (! $branchId && $user->active_branch_id) {
+            $branchId = $user->active_branch_id;
+        }
         $now        = Carbon::now();
 
         $overdue = DB::table('lead_followups')
@@ -282,6 +288,9 @@ class ReportService
         $user       = Auth::user();
         $businessId = $user->business_id;
         $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        if (! $branchId && $user->active_branch_id) {
+            $branchId = $user->active_branch_id;
+        }
 
         $activities = DB::table('lead_activities')
             ->join('leads', 'lead_activities.lead_id', '=', 'leads.id')
@@ -323,6 +332,9 @@ class ReportService
         $user       = Auth::user();
         $businessId = $user->business_id;
         $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        if (! $branchId && $user->active_branch_id) {
+            $branchId = $user->active_branch_id;
+        }
         $now        = Carbon::now();
 
         $query = DB::table('leads')
@@ -414,6 +426,10 @@ class ReportService
         $user       = Auth::user();
         $businessId = $user->business_id;
         $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        if (! $branchId && $user->active_branch_id) {
+            $branchId = $user->active_branch_id;
+        }
+        
         $dateFrom   = $filters['date_from'] ?? null;
         $dateTo     = $filters['date_to'] ?? null;
 
@@ -516,6 +532,9 @@ class ReportService
         $user       = Auth::user();
         $businessId = $user->business_id;
         $branchId   = $user->branch_id ?? ($filters['branch_id'] ?? null);
+        if (! $branchId && $user->active_branch_id) {
+            $branchId = $user->active_branch_id;
+        }
         $dateFrom   = $filters['date_from'] ?? null;
         $dateTo     = $filters['date_to'] ?? null;
 
