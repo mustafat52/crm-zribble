@@ -22,14 +22,15 @@ class User extends Authenticatable
     // business_id and branch_id are UUIDs (linked to businesses/branches tables).
 
     protected $fillable = [
-        'name',
-        'email',
-        'password',
-        'business_id',
-        'branch_id',
-        'phone',
-        'is_active',
-        'last_login_at',
+    'name',
+    'email',
+    'password',
+    'business_id',
+    'branch_id',
+    'active_branch_id',
+    'phone',
+    'is_active',
+    'last_login_at',
     ];
 
     protected $hidden = [
@@ -59,6 +60,11 @@ class User extends Authenticatable
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function activeBranch(): BelongsTo
+    {
+        return $this->belongsTo(Branch::class, 'active_branch_id');
     }
 
     public function tokenFamilies(): HasMany
