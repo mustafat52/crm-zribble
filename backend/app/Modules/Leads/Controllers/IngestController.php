@@ -22,9 +22,15 @@ class IngestController extends Controller
     {
         $data = $request->validate([
             'name'          => 'required|string|max:255',
-            'mobile'        => 'required|string|max:20',
+            // T84 FIX: Add phone format validation to the ingest API.
+            // Previously accepted any string including "abc" or "N/A",
+            // causing WhatsApp sends to fail silently and breaking duplicate detection.
+            'mobile'        => ['required', 'string', 'max:20', 'regex:/^[\+]?[0-9\s\-\(\)]{7,20}$/'],
             'email'         => 'nullable|email|max:255',
-            'source'        => 'nullable|string|max:100',
+            // T85 FIX: Restrict source to allowed values in ingest too.
+            // External webhooks often send "Website" (capital W) or variations that
+            // become separate rows in the Sources report instead of grouping with "website".
+            'source'        => 'nullable|string|in:manual,website,whatsapp,instagram,facebook,google,referral,api,qr,other',
             'campaign'      => 'nullable|string|max:255',
             'city'          => 'nullable|string|max:100',
             'interested_in' => 'nullable|string',
@@ -36,10 +42,10 @@ class IngestController extends Controller
         ]);
 
         // Source defaults to 'api' when coming through ingest
-        $data['source']        = $data['source'] ?? 'api';
+        $data['source']      = strtolower(trim($data['source'] ?? 'api'));
 
         // business_id injected by ApiKeyMiddleware — not from Auth user
-        $data['business_id']   = $request->input('_api_business_id');
+        $data['business_id'] = $request->input('_api_business_id');
 
         $lead = $this->service->create($data);
 

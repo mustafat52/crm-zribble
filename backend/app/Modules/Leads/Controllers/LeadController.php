@@ -40,12 +40,17 @@ class LeadController extends Controller
     {
         $data = $request->validate([
             'name'           => 'required|string|max:255',
-            'mobile'         => 'required|string|max:20',
+            // T84: Validate mobile number format — reject strings like "abc" or "123"
+            // that would silently fail WhatsApp sends and break duplicate detection.
+            'mobile'         => ['required', 'string', 'max:20', 'regex:/^[\+]?[0-9\s\-\(\)]{7,20}$/'],
             'email'          => 'nullable|email|max:255',
             'branch_id'      => 'nullable|uuid',
             'assigned_to'    => 'nullable|uuid',
             'lead_status_id' => 'nullable|uuid',
-            'source'         => 'nullable|string|max:100',
+            // T85: Restrict source to known allowed values to prevent report fragmentation.
+            // Free-form strings like "Website", "WEBSITE", "web-site" created separate
+            // rows in the Sources report instead of grouping correctly.
+            'source'         => 'nullable|string|in:manual,website,whatsapp,instagram,facebook,google,referral,api,qr,other',
             'campaign'       => 'nullable|string|max:255',
             'city'           => 'nullable|string|max:100',
             'interested_in'  => 'nullable|string',
@@ -55,6 +60,13 @@ class LeadController extends Controller
             'metadata'       => 'nullable|array',
             'custom_fields'  => 'nullable|array',
         ]);
+
+        // T85: Normalize source to lowercase and trim whitespace before storing.
+        // Even with the in: validation above, this defensive normalization prevents
+        // case-sensitivity issues from external integrations that bypass the validator.
+        if (isset($data['source'])) {
+            $data['source'] = strtolower(trim($data['source']));
+        }
 
         $lead = $this->service->create($data);
 
