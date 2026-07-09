@@ -11,15 +11,21 @@ class BranchScope implements Scope
 {
     public function apply(Builder $builder, Model $model): void
     {
-        if (Auth::check()) {
-            $user = Auth::user();
-            // Owners see all branches — branch_id is NULL for owners
-            if ($user->branch_id) {
-                $builder->where(
-                    $model->getTable() . '.branch_id',
-                    $user->branch_id
-                );
-            }
+        if (! Auth::check()) {
+            return;
         }
+
+        $user  = Auth::user();
+        $table = $model->getTable() . '.branch_id';
+
+        if ($user->branch_id) {
+            // Staff are always scoped to their assigned branch
+            $builder->where($table, $user->branch_id);
+        } elseif ($user->active_branch_id) {
+            // Owner has switched into a specific branch — scope to it
+            $builder->where($table, $user->active_branch_id);
+        }
+        // Neither set → owner sees all branches (no filter applied)
     }
+
 }
