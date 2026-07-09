@@ -80,12 +80,17 @@ class BranchController extends Controller
             ->count();
 
         // Avg response time: minutes from lead created_at to last_contacted_at
-        // Uses TIMESTAMPDIFF for MySQL compatibility
+        // Cross-DB: TIMESTAMPDIFF is MySQL-only; PostgreSQL uses EXTRACT(EPOCH FROM ...)
+        $isPgsql    = DB::connection()->getDriverName() === 'pgsql';
+        $diffExpr   = $isPgsql
+            ? 'EXTRACT(EPOCH FROM AVG(last_contacted_at - created_at)) / 60'
+            : 'AVG(TIMESTAMPDIFF(SECOND, created_at, last_contacted_at)) / 60';
+
         $avgResponseMinutes = DB::table('leads')
             ->where('business_id', $businessId)
             ->whereNull('deleted_at')
             ->whereNotNull('last_contacted_at')
-            ->selectRaw('AVG(TIMESTAMPDIFF(MINUTE, created_at, last_contacted_at)) as avg_minutes')
+            ->selectRaw("({$diffExpr}) as avg_minutes")
             ->value('avg_minutes');
 
         $overall = [
