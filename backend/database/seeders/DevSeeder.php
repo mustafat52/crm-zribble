@@ -46,6 +46,7 @@ class DevSeeder extends Seeder
             [
                 'name'        => 'Test Owner',
                 'password'    => Hash::make('password123'),
+                'phone'       => '+919876543210',
                 'business_id' => $business->id,
                 'branch_id'   => null,          // null = sees all branches
                 'is_active'   => true,

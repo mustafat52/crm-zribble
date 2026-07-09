@@ -346,7 +346,7 @@ class LeadService
             $lead->update(['next_followup_at' => $next->follow_up_at]);
         }
 
-        $this->logActivity($lead, 'followup_set', 'Follow-up marked as done.');
+        $this->logActivity($lead, 'followup_done', 'Follow-up marked as done.');
 
         return ['success' => true, 'followup_id' => $followupId];
     }
