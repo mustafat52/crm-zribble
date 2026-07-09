@@ -5,6 +5,7 @@ namespace App\Modules\Notifications\Listeners;
 use App\Mail\LeadCreatedMail;
 use App\Modules\Leads\Events\LeadCreated;
 use App\Modules\Notifications\Models\InAppNotification;
+use App\Modules\Notifications\Services\WebPushService;
 use App\Modules\WhatsApp\Services\WhatsAppService;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
@@ -68,6 +69,21 @@ class NotifyOwnerOfNewLead
             'is_read'     => false,
             'created_at'  => now(),
         ]);
+        try {
+             WebPushService::sendToUser(
+                $owner->id,
+                '🔔 New Lead',
+                "New lead received: {$lead->name} ({$lead->mobile})",
+                '/dashboard/leads/' . $lead->id,
+                '/icons/notification-icon.png'
+             );
+        } catch (\Throwable $e) {
+            Log::warning('[NotifyOwnerOfNewLead] WebPush failed', [
+                'owner_id' => $owner->id,
+                'lead_id'  => $lead->id,
+                'error'    => $e->getMessage(),
+            ]);
+        }
 
         // 3. Notify assignee if different from owner
         if ($lead->assigned_to && $lead->assigned_to !== $owner->id) {
@@ -82,6 +98,21 @@ class NotifyOwnerOfNewLead
                 'is_read'     => false,
                 'created_at'  => now(),
             ]);
+            try {
+            WebPushService::sendToUser(
+                    $lead->assigned_to,
+                    '🔔 New Lead',
+                    "New lead received: {$lead->name} ({$lead->mobile})",
+                    '/dashboard/leads/' . $lead->id,
+                    '/icons/notification-icon.png'
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[NotifyOwnerOfNewLead] WebPush failed', [
+                'owner_id' => $lead->assigned_to,
+                'lead_id'  => $lead->id,
+                'error'    => $e->getMessage(),
+                ]);
+            }
         }
 
         // 4. T71: Send WhatsApp to owner (guarded by wa_new_lead_alert setting)
