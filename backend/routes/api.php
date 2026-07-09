@@ -113,6 +113,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/branches/{id}',        [BranchController::class, 'update']);
     Route::put('/branches/{id}/toggle', [BranchController::class, 'toggleActive']);
     Route::delete('/branches/{id}',     [BranchController::class, 'destroy']);
+    Route::get('/branches/{id}',         [BranchController::class, 'show']);
+    Route::post('/branches/{id}/switch', [BranchController::class, 'switchBranch']);
 
     // In-app notifications
     Route::get('/notifications',            [\App\Modules\Notifications\Controllers\InAppNotificationController::class, 'index']);
