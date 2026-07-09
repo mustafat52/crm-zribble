@@ -2,6 +2,7 @@
 
 namespace App\Modules\Notifications\Jobs;
 
+use App\Helpers\BusinessOwnerResolver;
 use App\Models\AutomationLog;
 use App\Models\Business;
 use App\Modules\Automations\Services\AutomationService;
@@ -66,13 +67,12 @@ class SendFollowUpReminders implements ShouldQueue
         foreach ($dueFollowups as $followup) {
             try {
                 // ── 1 + 2: Salesperson in-app + email reminder ────────────
-                $recipientEmail = $followup->assigned_email
-                    ?? $this->getOwnerEmail($followup->business_id);
+                $recipientEmail = $followup->assigned_email ?? BusinessOwnerResolver::email($followup->business_id);
 
                 if ($recipientEmail) {
                     InAppNotification::create([
                         'business_id' => $followup->business_id,
-                        'user_id'     => $followup->assigned_to ?? $this->getOwnerId($followup->business_id),
+                        'user_id' => $followup->assigned_to ?? BusinessOwnerResolver::id($followup->business_id),
                         'lead_id'     => $followup->lead_id,
                         'type'        => 'follow_up_due',
                         'title'       => "Follow-up Due: {$followup->lead_name}",
@@ -97,8 +97,7 @@ class SendFollowUpReminders implements ShouldQueue
                 }
 
                 // ── 3: WhatsApp reminder to salesperson (TWA5-D) ─────────
-                $recipientPhone = $followup->assigned_phone
-                    ?? $this->getOwnerPhone($followup->business_id);
+                $recipientPhone = $followup->assigned_phone ?? BusinessOwnerResolver::phone($followup->business_id);
 
                 if ($recipientPhone) {
                     try {
@@ -154,66 +153,5 @@ class SendFollowUpReminders implements ShouldQueue
         }
     }
 
-    private function getOwnerEmail(string $businessId): ?string
-    {
-        $ownerRoleId = DB::table('roles')
-            ->where('name', 'owner')
-            ->where('guard_name', 'sanctum')
-            ->value('id');
-
-        if (!$ownerRoleId) return null;
-
-        $ownerIds = DB::table('model_has_roles')
-            ->where('role_id', $ownerRoleId)
-            ->where('model_type', 'App\\Models\\User')
-            ->pluck('model_id');
-
-        return DB::table('users')
-            ->where('business_id', $businessId)
-            ->whereIn('id', $ownerIds)
-            ->where('is_active', true)
-            ->value('email');
-    }
-
-    private function getOwnerPhone(string $businessId): ?string
-    {
-        $ownerRoleId = DB::table('roles')
-            ->where('name', 'owner')
-            ->where('guard_name', 'sanctum')
-            ->value('id');
-
-        if (!$ownerRoleId) return null;
-
-        $ownerIds = DB::table('model_has_roles')
-            ->where('role_id', $ownerRoleId)
-            ->where('model_type', 'App\\Models\\User')
-            ->pluck('model_id');
-
-        return DB::table('users')
-            ->where('business_id', $businessId)
-            ->whereIn('id', $ownerIds)
-            ->where('is_active', true)
-            ->value('phone');
-    }
-
-    private function getOwnerId(string $businessId): ?string
-    {
-        $ownerRoleId = DB::table('roles')
-            ->where('name', 'owner')
-            ->where('guard_name', 'sanctum')
-            ->value('id');
-
-        if (!$ownerRoleId) return null;
-
-        $ownerIds = DB::table('model_has_roles')
-            ->where('role_id', $ownerRoleId)
-            ->where('model_type', 'App\\Models\\User')
-            ->pluck('model_id');
-
-        return DB::table('users')
-            ->where('business_id', $businessId)
-            ->whereIn('id', $ownerIds)
-            ->where('is_active', true)
-            ->value('id');
-    }
+   
 }

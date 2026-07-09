@@ -114,7 +114,7 @@ class AutomationService
             ->flip()
             ->toArray();
 
-        $ownerEmail = $this->getOwnerEmail($businessId);
+        $ownerEmail = BusinessOwnerResolver::email($businessId);
 
         foreach ($staleLeads as $lead) {
             if (isset($recentlyNudged[$lead->id])) {
@@ -259,32 +259,5 @@ class AutomationService
                 'metadata'        => ['followup_id' => $followupId],
             ]);
         }
-    }
-
-    /**
-     * Get the owner email for a business.
-     * Uses the same UUID-safe pattern established throughout the codebase.
-     */
-    private function getOwnerEmail(string $businessId): ?string
-    {
-        $ownerRoleId = DB::table('roles')
-            ->where('name', 'owner')
-            ->where('guard_name', 'sanctum')
-            ->value('id');
-
-        if (!$ownerRoleId) {
-            return null;
-        }
-
-        $ownerIds = DB::table('model_has_roles')
-            ->where('role_id', $ownerRoleId)
-            ->where('model_type', 'App\\Models\\User')
-            ->pluck('model_id');
-
-        return DB::table('users')
-            ->where('business_id', $businessId)
-            ->whereIn('id', $ownerIds)
-            ->where('is_active', true)
-            ->value('email');
     }
 }
