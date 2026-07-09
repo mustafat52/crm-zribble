@@ -59,19 +59,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
-const NAV = [
-  { label: 'Dashboard', href: '/dashboard', icon: DashboardIcon },
-  { label: 'Leads',     href: '/leads',    icon: UsersIcon },
-  { label: 'Reports',   href: '/reports',  icon: ChartIcon },
-  { label: 'Automations', href: '/automation', icon: AutomationIcon },
-  { label: 'Branches',  href: '/branches', icon: BranchIcon },
-  { label: 'Settings',  href: '/settings', icon: SettingsIcon },
-]
-
 function Sidebar() {
   const router    = useRouter()
-  const user      = useAuthStore((s) => s.user)
-  const clearAuth = useAuthStore((s) => s.clearAuth)
+  const clearAuth = useAuthStore(s => s.clearAuth)
+  const user     = useAuthStore(s => s.user)
+  const isOwner  = user?.roles?.includes('owner')
+  const isManager = user?.roles?.includes('manager')
+
+  const NAV = [
+  { label: 'Dashboard',   href: '/dashboard',  icon: DashboardIcon },
+  { label: 'Leads',       href: '/leads',      icon: UsersIcon },
+  ...((isOwner || isManager) ? [{ label: 'Reports', href: '/reports', icon: ChartIcon }] : []),
+  ...(isOwner ? [
+    { label: 'Automations', href: '/automation', icon: AutomationIcon },
+    { label: 'Branches',    href: '/branches',   icon: BranchIcon },
+    { label: 'Settings',    href: '/settings',   icon: SettingsIcon },
+  ] : []),
+  ]
   const pathname  = usePathname()
 
   // T59 FIX: Call server logout endpoint before clearing local state.
