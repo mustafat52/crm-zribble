@@ -278,17 +278,31 @@ class AuthController extends Controller
     private function userPayload(User $user): array
     {
         return [
-            'id'          => $user->id,
-            'name'        => $user->name,
-            'email'       => $user->email,
-            'phone'       => $user->phone,
-            'business_id' => $user->business_id,
-            'branch_id'   => $user->branch_id,
-            'roles'       => $user->getRoleNames(),
-            'is_active'   => $user->is_active,
-            'last_login'  => $user->last_login_at,
+            'id'               => $user->id,
+            'name'             => $user->name,
+            'email'            => $user->email,
+            'phone'            => $user->phone,
+            'business_id'      => $user->business_id,
+            'branch_id'        => $user->branch_id,
+            'active_branch_id' => $user->active_branch_id,
+            'roles'            => $user->getRoleNames(),
+            'is_active'        => $user->is_active,
+            'last_login'       => $user->last_login_at,
         ];
     }
+//         return [
+//             'id'               => $user->id,
+//             'name'             => $user->name,
+//             'email'            => $user->email,
+//             'phone'            => $user->phone,
+//             'business_id'      => $user->business_id,
+//             'branch_id'        => $user->branch_id,
+//             'active_branch_id' => $user->active_branch_id,
+//             'roles'            => $user->getRoleNames(),
+//             'is_active'        => $user->is_active,
+//             'last_login'       => $user->last_login_at,
+//         ];
+//     }
 
     private function logLoginAttempt(Request $request, ?User $user, string $outcome, ?string $reason = null): void
     {
