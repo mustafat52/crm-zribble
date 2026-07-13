@@ -128,6 +128,7 @@ function BusinessTab({
   const [name,           setName]           = useState('')
   const [timezone,       setTimezone]       = useState('')
   const [whatsapp,       setWhatsapp]       = useState('')
+  const [address,        setAddress]        = useState('')
   const [dupHandling,    setDupHandling]    = useState<'merge' | 'new'>('merge')
   const [waLeadAlert,    setWaLeadAlert]    = useState(true)
   const [waAcknowledge,  setWaAcknowledge]  = useState(true)
@@ -140,6 +141,7 @@ function BusinessTab({
       setName(data.name ?? '')
       setTimezone(data.timezone ?? 'Asia/Kolkata')
       setWhatsapp(data.whatsapp_number ?? '')
+      setAddress((data.settings?.address as string) ?? '')
       setDupHandling(data.duplicate_handling ?? 'merge')
       setWaLeadAlert(data.settings?.wa_new_lead_alert as boolean ?? true)
       setWaAcknowledge(data.settings?.wa_customer_acknowledgement as boolean ?? true)
@@ -161,6 +163,7 @@ function BusinessTab({
           wa_new_lead_alert:           waLeadAlert,
           wa_customer_acknowledgement: waAcknowledge,
           wa_followup_reminder:        waFollowup,
+          address:                     address || null,
         },
       })
       setSaved(true)
@@ -204,6 +207,16 @@ function BusinessTab({
           disabled={!isOwner}
           style={inputStyle(!isOwner)}
           placeholder="+91 98765 43210"
+        />
+      </FieldRow>
+
+      <FieldRow label="Business Address" hint="Shown to customers in the WhatsApp acknowledgement message.">
+        <input
+          value={address}
+          onChange={e => setAddress(e.currentTarget.value)}
+          disabled={!isOwner}
+          style={inputStyle(!isOwner)}
+          placeholder="e.g. Shop 12, MG Road, Andheri West, Mumbai - 400058"
         />
       </FieldRow>
 

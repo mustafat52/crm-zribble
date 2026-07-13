@@ -29,12 +29,16 @@ class BusinessController extends Controller
     /**
      * PUT /api/v1/business
      * Updates name, timezone, whatsapp_number, settings.duplicate_handling,
-     * and WhatsApp notification toggles.
+     * WhatsApp notification toggles, and business address.
      *
      * T71 FIX: Accept and persist WhatsApp toggle settings.
      * Previously, the frontend sent wa_new_lead_alert, wa_customer_acknowledgement,
      * wa_followup_reminder inside a `settings` object, but BusinessController ignored them.
      * The toggles appeared to work in the UI but were never saved.
+     *
+     * T72: Accept and persist settings.address.
+     * Used to fill {{2}} in the lead_message_customer_24102025 WhatsApp template —
+     * previously always fell back to "N/A" because there was nowhere to save it.
      */
     public function update(Request $request): JsonResponse
     {
@@ -54,6 +58,8 @@ class BusinessController extends Controller
             'settings.wa_new_lead_alert'            => 'sometimes|boolean',
             'settings.wa_customer_acknowledgement'  => 'sometimes|boolean',
             'settings.wa_followup_reminder'         => 'sometimes|boolean',
+            // T72: Accept business address
+            'settings.address'                      => 'sometimes|nullable|string|max:500',
         ]);
 
         $business = Business::find($user->business_id);
@@ -87,6 +93,11 @@ class BusinessController extends Controller
         }
         if (isset($data['settings']['wa_followup_reminder'])) {
             $settings['wa_followup_reminder'] = $data['settings']['wa_followup_reminder'];
+        }
+
+        // T72: Persist business address into settings JSON
+        if (isset($data['settings']['address'])) {
+            $settings['address'] = $data['settings']['address'];
         }
 
         $business->settings = $settings;
