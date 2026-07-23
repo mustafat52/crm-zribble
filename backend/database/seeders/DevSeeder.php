@@ -54,6 +54,7 @@ class DevSeeder extends Seeder
          ['email' => 'owner@test.com'],
          [
              'name'             => 'Test Owner',
+             'phone'            => '+919550253852'
              'password'         => Hash::make('password123'),
              'business_id'      => $business->id,
              'branch_id'        => null,

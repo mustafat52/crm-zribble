@@ -41,6 +41,11 @@
   --accent-border: #7c3aed33;
   --accent-text:   #6d28d9;
 
+    /* ── ZRIBBLE brand (login) ── */
+  --brand-ink:    #0a0a0f;
+  --brand-pink:   #e6285c; 
+  --brand-pink-2: #f43f6f;
+
   /* ── Green (brand / converted) ── */
   --green:        #16a34a;
   --green-2:      #15803d;
@@ -120,3 +125,43 @@ input, select, textarea { font-family: inherit; }
 
 .mono { font-family: var(--font-mono); }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Login / auth motion ── */
+@keyframes zr-fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes zr-dot-drift {
+  0%,100% { transform: translate(0,0); }
+  50%     { transform: translate(6px,-8px); }
+}
+@keyframes zr-dot-pulse {
+  0%,100% { transform: scale(1);   opacity: .9; }
+  50%     { transform: scale(1.35); opacity: 1; }
+}
+@keyframes zr-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* Loader: violet→pink shimmer sweeps across the wordmark (the "it's working" cue) */
+@keyframes zr-shimmer { to { background-position: 200% center; } }
+/* Loader: each letter springs in with a slight overshoot */
+@keyframes zr-pop {
+  0%   { opacity: 0; transform: translateY(14px) scale(.8); }
+  60%  { opacity: 1; transform: translateY(-3px) scale(1.05); }
+  100% { opacity: 1; transform: translateY(0)   scale(1); }
+}
+/* Loader: the logo's pink dot shuttles along a track (indeterminate progress) */
+@keyframes zr-track {
+  0%,100% { left: 0%; }
+  50%     { left: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-zr-anim] { animation: none !important; }
+  /* keep the loader wordmark legible when motion is off */
+  .zr-loader-word { background: none !important; -webkit-text-fill-color: #fff !important; color: #fff !important; }
+}
+
+.zr-mobile-logo { display: none; }
+@media (max-width: 860px) {
+  .zr-brand-panel { display: none !important; }
+  .zr-mobile-logo { display: block; }
+}

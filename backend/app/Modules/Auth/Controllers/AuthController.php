@@ -6,11 +6,12 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Modules\Auth\Models\LoginHistory;
 use App\Modules\Auth\Models\TokenFamily;
-use Illuminate\Auth\Events\PasswordReset;
+use App\Mail\PasswordResetOtpMail;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
@@ -223,52 +224,108 @@ class AuthController extends Controller
     // T58: Forgot / Reset password — implemented via Laravel password broker
     // -------------------------------------------------------------------------
 
+    // POST /api/v1/auth/forgot-password — send a 6-digit OTP by email
     public function forgotPassword(Request $request): JsonResponse
     {
         $request->validate(['email' => 'required|email']);
 
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
+        // Throttle: 3 OTP requests per email per 10 min
+        $key = 'otp-send:' . strtolower($request->email);
+        if (RateLimiter::tooManyAttempts($key, 3)) {
+            return response()->json([
+                'message' => 'Too many requests. Please wait before requesting another code.',
+            ], 429);
+        }
+        RateLimiter::hit($key, 600);
 
-        if ($status === Password::RESET_LINK_SENT) {
-            return response()->json(['message' => 'If that email exists, a reset link has been sent.']);
+        $genericResponse = response()->json([
+            'message' => 'If that email exists, a reset code has been sent.',
+        ]);
+
+        $user = User::where('email', $request->email)->first();
+        if (! $user) {
+            return $genericResponse; // no account enumeration
         }
 
-        return response()->json([
-            'message' => 'Unable to send reset link. Please check the email address and try again.',
-        ], 422);
+        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
+        // One active OTP row per email
+        DB::table('password_reset_otps')->where('email', $user->email)->delete();
+        DB::table('password_reset_otps')->insert([
+            'email'      => $user->email,
+            'otp_hash'   => Hash::make($otp),
+            'attempts'   => 0,
+            'expires_at' => Carbon::now()->addMinutes(10),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Mail::to($user->email)->send(new PasswordResetOtpMail($otp, 10));
+
+        return $genericResponse;
     }
 
+    // POST /api/v1/auth/verify-otp — verify code, issue a single-use reset token
+    public function verifyOtp(Request $request): JsonResponse
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp'   => 'required|digits:6',
+        ]);
+
+        $row = DB::table('password_reset_otps')->where('email', $request->email)->first();
+
+        if (! $row || Carbon::parse($row->expires_at)->isPast()) {
+            return response()->json(['message' => 'Invalid or expired code.'], 422);
+        }
+        if ($row->attempts >= 5) {
+            return response()->json(['message' => 'Too many attempts. Request a new code.'], 429);
+        }
+
+        if (! Hash::check($request->otp, $row->otp_hash)) {
+            DB::table('password_reset_otps')->where('id', $row->id)->increment('attempts');
+            return response()->json(['message' => 'Invalid or expired code.'], 422);
+        }
+
+        // Correct — mint a single-use reset token (valid 15 min)
+        $resetToken = Str::random(64);
+        DB::table('password_reset_otps')->where('id', $row->id)->update([
+            'reset_token_hash' => Hash::make($resetToken),
+            'verified_at'      => now(),
+            'expires_at'       => Carbon::now()->addMinutes(15),
+            'updated_at'       => now(),
+        ]);
+
+        return response()->json(['reset_token' => $resetToken]);
+    }
+
+     // POST /api/v1/auth/reset-password — set new password using the reset token
     public function resetPassword(Request $request): JsonResponse
     {
         $request->validate([
-            'token'                 => 'required',
             'email'                 => 'required|email',
+            'reset_token'           => 'required|string',
             'password'              => 'required|min:8|confirmed',
             'password_confirmation' => 'required',
         ]);
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function (User $user, string $password) {
-                $user->forceFill([
-                    'password' => Hash::make($password),
-                ])->setRememberToken(Str::random(60));
+        $row = DB::table('password_reset_otps')->where('email', $request->email)->first();
 
-                $user->save();
-
-                event(new PasswordReset($user));
-            }
-        );
-
-        if ($status === Password::PASSWORD_RESET) {
-            return response()->json(['message' => 'Password reset successfully.']);
+        if (! $row || ! $row->reset_token_hash || Carbon::parse($row->expires_at)->isPast()
+            || ! Hash::check($request->reset_token, $row->reset_token_hash)) {
+            return response()->json(['message' => 'Invalid or expired reset session. Start again.'], 422);
         }
 
-        return response()->json([
-            'message' => 'Invalid or expired reset token. Please request a new password reset.',
-        ], 422);
+        $user = User::where('email', $request->email)->firstOrFail();
+        $user->forceFill(['password' => Hash::make($request->password)])
+             ->setRememberToken(Str::random(60))
+             ->save();
+
+        // Burn the OTP row + revoke existing sessions for safety
+        DB::table('password_reset_otps')->where('email', $request->email)->delete();
+        $user->tokens()->delete(); // force re-login on all devices
+
+        return response()->json(['message' => 'Password reset successfully. Please sign in.']);
     }
 
     // -------------------------------------------------------------------------
